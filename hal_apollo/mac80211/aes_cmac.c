@@ -130,3 +130,6 @@ void ieee80211_aes_cmac_key_free(struct crypto_cipher *tfm)
 {
 	crypto_free_cipher(tfm);
 }
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 10, 0))
+MODULE_IMPORT_NS(CRYPTO_INTERNAL);
+#endif

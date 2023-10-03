@@ -13,7 +13,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
+#ifdef CONFIG_ATBM_SPECTRUM_MGMT
 #include <linux/ieee80211.h>
 #include <net/cfg80211.h>
 #include <net/atbm_mac80211.h>
@@ -45,7 +45,7 @@ static void ieee80211_send_refuse_measurement_request(struct ieee80211_sub_if_da
 						IEEE80211_STYPE_ACTION);
 
 	atbm_skb_put(skb, 1 + sizeof(msr_report->u.action.u.measurement));
-	msr_report->u.action.category = WLAN_CATEGORY_SPECTRUM_MGMT;
+	msr_report->u.action.category = ATBM_WLAN_CATEGORY_SPECTRUM_MGMT;
 	msr_report->u.action.u.measurement.action_code =
 				WLAN_ACTION_SPCT_MSR_RPRT;
 	msr_report->u.action.u.measurement.dialog_token = dialog_token;
@@ -80,3 +80,4 @@ void ieee80211_process_measurement_req(struct ieee80211_sub_if_data *sdata,
 			mgmt->sa, mgmt->bssid,
 			mgmt->u.action.u.measurement.dialog_token);
 }
+#endif

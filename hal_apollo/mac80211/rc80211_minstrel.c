@@ -254,7 +254,7 @@ minstrel_update_stats_per_s(struct minstrel_priv *mp, struct minstrel_sta_info *
 		}
 		mr->success_prob1 = success_prob;
 #ifdef MINSTREL_PHY_DEBUG_PRINT 
-		printk("Rate:%d success_hist1:%llu, att_hist1:%llu, success_prob:%u, cur_tp:%u, prob:%u\n", mr->bitrate/2, mr->succ_hist1, mr->att_hist1, success_prob,mr->cur_tp, mr->probability/180);
+		atbm_printk_always("Rate:%d success_hist1:%llu, att_hist1:%llu, success_prob:%u, cur_tp:%u, prob:%u\n", mr->bitrate/2, mr->succ_hist1, mr->att_hist1, success_prob,mr->cur_tp, mr->probability/180);
 #endif		//	mr->succ_hist1 = 0;
 		//	mr->att_hist1 = 0;
 	}    
@@ -263,9 +263,9 @@ minstrel_update_stats_per_s(struct minstrel_priv *mp, struct minstrel_sta_info *
 
 	minstrel_update_stats_calibrate_rate_policy(mp, mi);
 #ifdef MINSTREL_PHY_DEBUG_PRINT 
-	printk("\n mi->rssi_count:%d,  mi->mean_rssi%d  mi->max_rssi :%d, mi->min_rssi:%d tableflag:%d count:%d\n",
+	atbm_printk_always("\n mi->rssi_count:%d,  mi->mean_rssi%d  mi->max_rssi :%d, mi->min_rssi:%d tableflag:%d count:%d\n",
 			mi->rssi_count, mi->mean_rssi, mi->max_rssi, mi->min_rssi, mi->table_flag, mi->table_count);
-	printk("high_not_sample_cnt:%d, high_sample_cnt:%d, low_sample_cnt:%d, not_sample_cnt:%d\n", mi->high_not_sample_cnt, mi->high_sample_cnt,
+	atbm_printk_always("high_not_sample_cnt:%d, high_sample_cnt:%d, low_sample_cnt:%d, not_sample_cnt:%d\n", mi->high_not_sample_cnt, mi->high_sample_cnt,
 			mi->low_sample_cnt, mi->not_sample_cnt);
 #endif
 	for (i = 0; i < mi->n_rates; i++) {
@@ -835,14 +835,14 @@ minstrel_update_stats(struct minstrel_priv *mp, struct minstrel_sta_info *mi)
 #endif
 #ifdef MINSTREL_RSSI_USED
 #ifdef MINSTREL_PHY_DEBUG_PRINT 
-			printk("minstrel sample table:\n");
+			atbm_printk_always("minstrel sample table:\n");
 			for (col = 0; col < SAMPLE_COLUMNS; col++) {
 				for (i = 0; i < n_srates; i++) {
 
-					printk("%d ", SAMPLE_TBL(mi, i, col));  
+					atbm_printk_always("%d ", SAMPLE_TBL(mi, i, col));  
 
 				}
-				printk(KERN_ERR "\n");
+				atbm_printk_always("\n");
 			}
 #endif
 #endif
@@ -864,7 +864,7 @@ minstrel_update_stats(struct minstrel_priv *mp, struct minstrel_sta_info *mi)
 					ctl_rate->bitrate,
 					!!(ctl_rate->flags & IEEE80211_RATE_ERP_G), 1);
 #ifdef MINSTREL_PHY_DEBUG_PRINT
-			printk("\n retry count: ");
+			atbm_printk_always("\n retry count: ");
 #endif
 				for (i = 0; i < sband->n_bitrates; i++) {
 					struct minstrel_rate *mr = &mi->r[n];
@@ -909,14 +909,14 @@ minstrel_update_stats(struct minstrel_priv *mp, struct minstrel_sta_info *mi)
 							(++mr->retry_count < mp->max_retry));
 					mr->adjusted_retry_count = mr->retry_count;
 #ifdef MINSTREL_PHY_DEBUG_PRINT
-					printk("%d, ", mr->retry_count);
+					atbm_printk_always("%d, ", mr->retry_count);
 					mr->retry_count = 4;
 					mr->adjusted_retry_count = 4;
 					//printk("%d, ",mr->retry_count);
 #endif
 				}
 #ifdef MINSTREL_PHY_DEBUG_PRINT
-			printk("\n");
+			atbm_printk_always("\n");
 #endif
 
 				for (i = n; i < sband->n_bitrates; i++) {

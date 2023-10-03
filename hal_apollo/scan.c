@@ -19,6 +19,10 @@
 #include "pm.h"
 #include "bh.h"
 #include "atbm_p2p.h"
+#ifdef CONFIG_ATBM_SCAN_SPLIT
+#define ATBM_SPLIT_SCAN_MAX_CHANNEL			2
+#define ATBM_SPLIT_NEXT_CHANNEL_TIME	(500)
+#endif
 #ifdef ATBM_SUPPORT_SMARTCONFIG
 extern int smartconfig_magic_scan_done(struct atbm_common *hw_priv);
 #endif
@@ -28,12 +32,6 @@ static void atbm_scan_restart_delayed(struct atbm_vif *priv);
 extern void etf_v2_scan_end(struct atbm_common *hw_priv, struct ieee80211_vif *vif );
 extern void etf_v2_scan_rx(struct atbm_common *hw_priv,struct sk_buff *skb,u8 rssi );
 //#endif
-
-#ifdef CONFIG_WIRELESS_EXT
-extern void atbm_scan_channel_rec(u16 channel);
-extern int atbm_best_ch_scan_status_get(void);
-#endif
-
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 static int atbm_advance_scan_start(struct atbm_common *hw_priv)
 {
@@ -48,7 +46,7 @@ static int atbm_advance_scan_start(struct atbm_common *hw_priv)
 	return 0;
 }
 #endif
-
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 static void atbm_remove_wps_p2p_ie(struct wsm_template_frame *frame)
 {
 	u8 *ies;
@@ -84,12 +82,6 @@ static void atbm_remove_wps_p2p_ie(struct wsm_template_frame *frame)
 		atbm_skb_trim(frame->skb, frame->skb->len - (p2p_ie_len + wps_ie_len));
 	}
 }
-#ifdef RESET_CHANGE
-void atbm_reset_remove_wps_p2p_ie(struct wsm_template_frame *frame)
-{
-	atbm_remove_wps_p2p_ie(frame);
-}
-
 #endif
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 static int atbm_disable_filtering(struct atbm_vif *priv)
@@ -125,6 +117,37 @@ static int atbm_disable_filtering(struct atbm_vif *priv)
 }
 
 #endif
+
+#ifdef CONFIG_ATBM_SCAN_SPLIT
+void atbm_scan_split_work(struct atbm_work_struct *work)
+{
+	struct atbm_common *hw_priv =
+		container_of(work, struct atbm_common, scan.scan_spilt.work);
+
+	wsm_lock_tx_async(hw_priv);
+	atbm_scan_work(&hw_priv->scan.work);
+}
+#endif
+
+static bool atbm_scan_split_running(struct atbm_common *hw_priv)
+{
+#ifdef CONFIG_ATBM_SCAN_SPLIT
+	if(hw_priv->scan.curr == hw_priv->scan.end)
+		return false;
+	if(hw_priv->scan.split == 0)
+		return false;
+	
+	wsm_unlock_tx(hw_priv);
+	atbm_printk_debug("%s:wait next scan\n",__func__);
+	atbm_hw_priv_queue_delayed_work(hw_priv, &hw_priv->scan.scan_spilt,msecs_to_jiffies(ATBM_SPLIT_NEXT_CHANNEL_TIME));
+
+	return true;
+#else
+	BUG_ON(hw_priv == NULL);
+	return false;
+#endif
+}
+
 static int atbm_scan_start(struct atbm_vif *priv, struct wsm_scan *scan)
 {
 	int ret, i;
@@ -136,11 +159,11 @@ static int atbm_scan_start(struct atbm_vif *priv, struct wsm_scan *scan)
 
 	atomic_set(&hw_priv->scan.in_progress, 1);
 	atomic_set(&hw_priv->recent_scan, 1);
-	#ifndef CONFIG_WAKELOCK
-	#ifdef CONFIG_PM
+#ifndef CONFIG_WAKELOCK
+#ifdef CONFIG_PM
 	atbm_pm_stay_awake(&hw_priv->pm_state, tmo * HZ / 1000);
-	#endif
-	#endif
+#endif
+#endif
 	atbm_hw_priv_queue_delayed_work(hw_priv, &hw_priv->scan.timeout,
 		tmo * HZ / 1000);
 	hw_priv->scan.wait_complete = 1;
@@ -152,12 +175,12 @@ static int atbm_scan_start(struct atbm_vif *priv, struct wsm_scan *scan)
 	if (unlikely(ret)) {
 		hw_priv->scan.wait_complete = 0;
 		atomic_set(&hw_priv->scan.in_progress, 0);
-		atbm_cancle_delayed_work(&hw_priv->scan.timeout,true);
+		atbm_hw_cancel_delayed_work(&hw_priv->scan.timeout,true);
 //		atbm_scan_restart_delayed(priv);
 	}
 	return ret;
 }
-
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 #ifdef ROAM_OFFLOAD
 static int atbm_sched_scan_start(struct atbm_vif *priv, struct wsm_scan *scan)
 {
@@ -171,10 +194,10 @@ static int atbm_sched_scan_start(struct atbm_vif *priv, struct wsm_scan *scan)
 	return ret;
 }
 #endif /*ROAM_OFFLOAD*/
-
+#endif
 int atbm_hw_scan(struct ieee80211_hw *hw,
 		   struct ieee80211_vif *vif,
-		   struct cfg80211_scan_request *req)
+		   struct ieee80211_scan_req_wrap *req_wrap)
 {
 	struct atbm_common *hw_priv = hw->priv;
 	struct atbm_vif *priv = ABwifi_get_vif_from_ieee80211(vif);
@@ -183,19 +206,19 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 	};
 	int i;
 	int ret = 0;
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 	int roc_if_id = 0;
+#endif
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 	u16 advance_scan_req_channel;
 #endif
 
-	#ifdef RESET_CHANGE
-	if(atomic_read(&hw_priv->reset_flag))
-	{
-		printk(KERN_DEBUG "%s:hw_priv->reset_flag lock \n",__func__);
-		return -EBUSY;
-	}
-	#endif
 	if(atbm_bh_is_term(hw_priv)){
+		return -EOPNOTSUPP;
+	}
+
+	if(atomic_read(&priv->enabled) == 0){
+		atbm_printk_err("%s:disabled\n",__func__);
 		return -EOPNOTSUPP;
 	}
 	/* Scan when P2P_GO corrupt firmware MiniAP mode */
@@ -203,54 +226,53 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 	{
 		return -EOPNOTSUPP;
 	}
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 	mutex_lock(&hw_priv->conf_mutex);
 	roc_if_id = hw_priv->roc_if_id;
 	mutex_unlock(&hw_priv->conf_mutex);
-	if (work_pending(&priv->offchannel_work) ||
+
+	if (atbm_work_pending(&priv->offchannel_work) ||
 			(roc_if_id != -1)) {
-		wiphy_dbg(hw_priv->hw->wiphy, "[SCAN] Offchannel work pending, "
-				"ignoring scan work %d\n",  hw_priv->roc_if_id);
-		printk(KERN_DEBUG "[SCAN] Offchannel work pending,ignoring scan work %d\n",hw_priv->roc_if_id);
+		atbm_printk_err( "[SCAN] Offchannel work pending,ignoring scan work %d\n",hw_priv->roc_if_id);
 		return -EBUSY;
 	}
+#endif
 
-	if (req->n_ssids == 1 && !req->ssids[0].ssid_len)
-		req->n_ssids = 0;
+	if (req_wrap->req->n_ssids == 1 && !req_wrap->req->ssids[0].ssid_len)
+		req_wrap->req->n_ssids = 0;
 
-	wiphy_dbg(hw->wiphy, "[SCAN] Scan request for %d SSIDs.\n",
-		req->n_ssids);
+	atbm_printk_debug("[SCAN] Scan request for %d SSIDs.\n",req_wrap->req->n_ssids);
 
-	if (req->n_ssids > hw->wiphy->max_scan_ssids)
+	if (req_wrap->req->n_ssids > hw->wiphy->max_scan_ssids)
 	{
-		printk("%s:req->n_ssids > hw->wiphy->max_scan_ssids\n",__func__);
 		return -EINVAL;
 	}
 
 	frame.skb = ieee80211_probereq_get(hw, vif, NULL, 0,
-		req->ie, req->ie_len);
+		req_wrap->req->ie, req_wrap->req->ie_len,
+		req_wrap->flags & IEEE80211_SCAN_REQ_NEED_BSSID ? req_wrap->bssid:NULL);
 	if (!frame.skb)
 		return -ENOMEM;
-	
-	#ifdef ATBM_P2P_CHANGE
+#ifdef CONFIG_ATBM_SUPPORT_P2P	
+#ifdef ATBM_P2P_CHANGE
 	atbm_parase_p2p_mgmt_frame(priv,frame.skb,true);
-	#endif
-#ifdef ATBM_PRIVATE_IE
-	//frame.skb=atbm_mgmt_add_private_ie(frame.skb);
 #endif
+#endif
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 #ifdef ROAM_OFFLOAD
 	if (priv->join_status != ATBM_APOLLO_JOIN_STATUS_STA) {
-		if (req->channels[0]->band == NL80211_BAND_2GHZ)
+		if (req_wrap->req->channels[0]->band == NL80211_BAND_2GHZ)
 			hw_priv->num_scanchannels = 0;
 		else
 			hw_priv->num_scanchannels = hw_priv->num_2g_channels;
 		
-		for (i=0; i < req->n_channels; i++) {
+		for (i=0; i < req_wrap->req->n_channels; i++) {
 			hw_priv->scan_channels[hw_priv->num_scanchannels + i].number = \
-				req->channels[i]->hw_value;
+				channel_hw_value(req_wrap->req->channels[i]);
 			#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0))
-			if (req->channels[i]->flags & IEEE80211_CHAN_PASSIVE_SCAN) 
+			if (req_wrap->req->channels[i]->flags & IEEE80211_CHAN_PASSIVE_SCAN) 
 			#else
-			if (req->channels[i]->flags &IEEE80211_CHAN_NO_IR)
+			if (req_wrap->req->channels[i]->flags &IEEE80211_CHAN_NO_IR)
 			#endif
 			{
 				hw_priv->scan_channels[hw_priv->num_scanchannels + i].minChannelTime = 50;
@@ -263,19 +285,19 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 					ATBM_APOLLO_SCAN_TYPE_ACTIVE;
 			}
 			hw_priv->scan_channels[hw_priv->num_scanchannels + i].txPowerLevel = \
-				req->channels[i]->max_power;
-			if (req->channels[0]->band == NL80211_BAND_5GHZ)
+				req_wrap->req->channels[i]->max_power;
+			if (req_wrap->req->channels[0]->band == NL80211_BAND_5GHZ)
 				hw_priv->scan_channels[hw_priv->num_scanchannels + i].number |= \
 					ATBM_APOLLO_SCAN_BAND_5G;
 		}
-		if (req->channels[0]->band == NL80211_BAND_2GHZ)
-			hw_priv->num_2g_channels = req->n_channels;
+		if (req_wrap->req->channels[0]->band == NL80211_BAND_2GHZ)
+			hw_priv->num_2g_channels = req_wrap->req->n_channels;
 		else
-			hw_priv->num_5g_channels = req->n_channels;
+			hw_priv->num_5g_channels = req_wrap->req->n_channels;
 	}
 	hw_priv->num_scanchannels = hw_priv->num_2g_channels + hw_priv->num_5g_channels;
 #endif /*ROAM_OFFLOAD*/
-
+#endif
 	/*
 	*supplicant requres scan,we must stay awake.
 	*/
@@ -283,15 +305,15 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 	/* will be unlocked in atbm_scan_work() */
 	down(&hw_priv->scan.lock);
 	mutex_lock(&hw_priv->conf_mutex);
-	printk(KERN_ERR "%s:if_id(%d)\n",__func__,priv->if_id);
+	atbm_printk_scan("%s:if_id(%d)\n",__func__,priv->if_id);
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 	/* Active Scan - Serving Channel Request Handling */
-	advance_scan_req_channel = req->channels[0]->hw_value;
+	advance_scan_req_channel = channel_hw_value(req_wrap->req->channels[0]);
 	if (hw_priv->enable_advance_scan &&
 		(hw_priv->advanceScanElems.scanMode ==
 			ATBM_APOLLO_SCAN_MEASUREMENT_ACTIVE) &&
 		(priv->join_status == ATBM_APOLLO_JOIN_STATUS_STA) &&
-		(hw_priv->channel->hw_value == advance_scan_req_channel)) {
+		(channel_hw_value(hw_priv->channel) == advance_scan_req_channel)) {
 		BUG_ON(hw_priv->scan.req);
 		/* wsm_lock_tx(hw_priv); */
 		wsm_vif_lock_tx(priv);
@@ -305,8 +327,7 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 		/* Disable Rx Beacon and Bssid filter */
 		ret = atbm_disable_filtering(priv);
 		if (ret)
-			wiphy_err(priv->hw->wiphy,
-			"%s: Disable BSSID or Beacon filtering failed: %d.\n",
+			atbm_printk_warn("%s: Disable BSSID or Beacon filtering failed: %d.\n",
 			__func__, ret);
 		wsm_unlock_tx(hw_priv);
 		mutex_unlock(&hw_priv->conf_mutex);
@@ -317,18 +338,22 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 	} else {
 #endif
 		if (frame.skb) {
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 			if (priv->if_id == 0)
 				atbm_remove_wps_p2p_ie(&frame);
+#endif
 #ifdef P2P_MULTIVIF
 
 #ifdef ATBM_SUPPORT_WIDTH_40M
 //#ifdef P2P_MULTIVIF
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 			if(priv->if_id&&(priv->vif->p2p==true))
 			{
 				struct atbm_ieee80211_mgmt *mgmt = (struct atbm_ieee80211_mgmt *)frame.skb->data;
-				printk(KERN_DEBUG "%s:atbm_clear_wpas_p2p_40M_ie,if_id(%d)\n",__func__,priv->if_id);
+				atbm_printk_debug( "%s:atbm_clear_wpas_p2p_40M_ie,if_id(%d)\n",__func__,priv->if_id);
 				atbm_clear_wpas_p2p_40M_ie(mgmt,frame.skb->len);
 			}
+#endif
 //#endif
 #endif
 			ret = wsm_set_template_frame(hw_priv, &frame,
@@ -355,15 +380,22 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 		wsm_flush_tx(hw_priv);
 		
 		BUG_ON(hw_priv->scan.req);
-		hw_priv->scan.req = req;
+		hw_priv->scan.req = req_wrap->req;
+		hw_priv->scan.req_wrap = req_wrap;
 		hw_priv->scan.n_ssids = 0;
 		hw_priv->scan.status = 0;
-		hw_priv->scan.begin = &req->channels[0];
+		hw_priv->scan.begin = &req_wrap->req->channels[0];
 		hw_priv->scan.curr = hw_priv->scan.begin;
-		hw_priv->scan.end = &req->channels[req->n_channels];
+		hw_priv->scan.end = &req_wrap->req->channels[req_wrap->req->n_channels];
 		hw_priv->scan.output_power = hw_priv->output_power;
 		hw_priv->scan.if_id = priv->if_id;
-		#ifdef ATBM_P2P_CHANGE
+		hw_priv->scan.passive = !!(req_wrap->flags & IEEE80211_SCAN_REQ_PASSIVE_SCAN);
+		hw_priv->scan.cca = !!(req_wrap->flags & IEEE80211_SCAN_REQ_CCA);
+#ifdef CONFIG_ATBM_SCAN_SPLIT
+		hw_priv->scan.split = !!(req_wrap->flags & IEEE80211_SCAN_REQ_SPILT);
+#endif
+#ifdef CONFIG_ATBM_SUPPORT_P2P
+#ifdef ATBM_P2P_CHANGE
 		/*
 		*when p2p scan for p2p go , must make sure that we have 
 		*receive the p2p go beacon or probe resp.
@@ -372,17 +404,18 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 			hw_priv->p2p_scan_start_time = jiffies;
 			atomic_set(&hw_priv->receive_go_resp,0);
 		}
-		#endif
+#endif
+#endif
 		/* TODO:COMBO: Populate BIT4 in scanflags to decide on which MAC
 		 * address the SCAN request will be sent */
 
-		for (i = 0; i < req->n_ssids; ++i) {
+		for (i = 0; i < req_wrap->req->n_ssids; ++i) {
 			struct wsm_ssid *dst =
 				&hw_priv->scan.ssids[hw_priv->scan.n_ssids];
-			BUG_ON(req->ssids[i].ssid_len > sizeof(dst->ssid));
-			memcpy(&dst->ssid[0], req->ssids[i].ssid,
+			BUG_ON(req_wrap->req->ssids[i].ssid_len > sizeof(dst->ssid));
+			memcpy(&dst->ssid[0], req_wrap->req->ssids[i].ssid,
 				sizeof(dst->ssid));
-			dst->length = req->ssids[i].ssid_len;
+			dst->length = req_wrap->req->ssids[i].ssid_len;
 			++hw_priv->scan.n_ssids;
 		}
 
@@ -390,7 +423,7 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 
 		if (frame.skb)
 			atbm_dev_kfree_skb(frame.skb);
-		printk(KERN_ERR "%s:scan, delay suspend v12\n",__func__);
+		atbm_printk_scan("%s:scan, delay suspend\n",__func__);
 		atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.work);
 
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
@@ -398,7 +431,7 @@ int atbm_hw_scan(struct ieee80211_hw *hw,
 #endif
 	return 0;
 }
-
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 #ifdef ROAM_OFFLOAD
 int atbm_hw_sched_scan_start(struct ieee80211_hw *hw,
 		   struct ieee80211_vif *vif,
@@ -412,7 +445,7 @@ int atbm_hw_sched_scan_start(struct ieee80211_hw *hw,
 	};
 	int i;
 
-	wiphy_warn(hw->wiphy, "[SCAN] Scheduled scan request-->.\n");
+	atbm_printk_warn("[SCAN] Scheduled scan request-->.\n");
 
 	if (!priv->vif)
 		return -EINVAL;
@@ -421,18 +454,17 @@ int atbm_hw_sched_scan_start(struct ieee80211_hw *hw,
 	if (priv->join_status == ATBM_APOLLO_JOIN_STATUS_AP)
 		return -EOPNOTSUPP;
 
-	wiphy_warn(hw->wiphy, "[SCAN] Scheduled scan: n_ssids %d, ssid[0].len = %d\n", req->n_ssids, req->ssids[0].ssid_len);
+	atbm_printk_warn("[SCAN] Scheduled scan: n_ssids %d, ssid[0].len = %d\n", req->n_ssids, req->ssids[0].ssid_len);
 	if (req->n_ssids == 1 && !req->ssids[0].ssid_len)
 		req->n_ssids = 0;
 
-	wiphy_dbg(hw->wiphy, "[SCAN] Scan request for %d SSIDs.\n",
-		req->n_ssids);
+	atbm_printk_debug("[SCAN] Scan request for %d SSIDs.\n",req->n_ssids);
 
 	if (req->n_ssids > hw->wiphy->max_scan_ssids)
 		return -EINVAL;
 
 	frame.skb = ieee80211_probereq_get(hw, priv->vif, NULL, 0,
-		ies->ie[0], ies->len[0]);
+		ies->ie[0], ies->len[0],NULL);
 	if (!frame.skb)
 		return -ENOMEM;
 
@@ -441,8 +473,10 @@ int atbm_hw_sched_scan_start(struct ieee80211_hw *hw,
 	mutex_lock(&hw_priv->conf_mutex);
 	if (frame.skb) {
 		int ret;
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 		if (priv->if_id == 0)
 			atbm_remove_wps_p2p_ie(&frame);
+#endif
 		ret = wsm_set_template_frame(hw_priv, &frame, priv->if_id);
 		if (0 == ret) {
 			priv->tmpframe_probereq_set = 1;
@@ -478,9 +512,9 @@ int atbm_hw_sched_scan_start(struct ieee80211_hw *hw,
 		++hw_priv->scan.n_ssids;
 		{
 			u8 j;
-			wiphy_warn(hw->wiphy, "[SCAN] SSID %d\n",i);
+			atbm_printk_warn("[SCAN] SSID %d\n",i);
 			for(j=0; j<req->ssids[i].ssid_len; j++)
-				wiphy_warn(priv->hw->wiphy, "[SCAN] 0x%x\n", req->ssids[i].ssid[j]);
+				atbm_printk_warn("[SCAN] 0x%x\n", req->ssids[i].ssid[j]);
 		}
 	}
 
@@ -489,17 +523,20 @@ int atbm_hw_sched_scan_start(struct ieee80211_hw *hw,
 	if (frame.skb)
 		atbm_dev_kfree_skb(frame.skb);
 	atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.swork);
-	wiphy_warn(hw->wiphy, "<--[SCAN] Scheduled scan request.\n");
+	atbm_printk_warn("<--[SCAN] Scheduled scan request.\n");
 	return 0;
 }
 #endif /*ROAM_OFFLOAD*/
-
-void atbm_scan_work(struct work_struct *work)
+#endif
+void atbm_scan_work(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv = container_of(work,
 						struct atbm_common,
 						scan.work);
-	struct atbm_vif *priv, *vif;
+	struct atbm_vif *priv;
+#ifndef CONFIG_TX_NO_CONFIRM
+	struct atbm_vif	*vif;
+#endif
 	struct ieee80211_channel **it;
 	struct wsm_scan scan = {
 		.scanType = WSM_SCAN_TYPE_FOREGROUND,
@@ -514,7 +551,7 @@ void atbm_scan_work(struct work_struct *work)
 	int scan_status = 0;
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 	int ret = 0;
-	u16 advance_scan_req_channel = hw_priv->scan.begin[0]->hw_value;
+	u16 advance_scan_req_channel = channel_hw_value(hw_priv->scan.begin[0]);
 #endif
 
 	
@@ -523,24 +560,21 @@ void atbm_scan_work(struct work_struct *work)
 	/*TODO: COMBO: introduce locking so vif is not removed in meanwhile */
 
     if (!priv) {
-            wiphy_dbg(hw_priv->hw->wiphy, "[SCAN] interface removed, "
-                      "ignoring scan work\n");
-	  printk("%s:[SCAN] interface removed\n",__func__);
-            return;
+        goto vif_err;
     }
 
 	if (priv->if_id)
 		scan.scanFlags |= WSM_FLAG_MAC_INSTANCE_1;
 	else
 		scan.scanFlags &= ~WSM_FLAG_MAC_INSTANCE_1;
-
+#ifndef CONFIG_TX_NO_CONFIRM
 	atbm_for_each_vif(hw_priv, vif, i) {
 		if (!vif)
 			continue;
 	if (vif->bss_loss_status > ATBM_APOLLO_BSS_LOSS_NONE)
 		scan.scanFlags |= WSM_SCAN_FLAG_FORCE_BACKGROUND;
 	}
-
+#endif
 
 	first_run = hw_priv->scan.begin == hw_priv->scan.curr &&
 			hw_priv->scan.begin != hw_priv->scan.end;
@@ -549,7 +583,7 @@ void atbm_scan_work(struct work_struct *work)
 		/* Firmware gets crazy if scan request is sent
 		 * when STA is joined but not yet associated.
 		 * Force unjoin in this case. */
-		if (atbm_cancle_delayed_work(&priv->join_timeout,true) > 0)
+		if (atbm_hw_cancel_delayed_work(&priv->join_timeout,true) > 0)
 			atbm_join_timeout(&priv->join_timeout.work);
 	}
 
@@ -562,7 +596,7 @@ void atbm_scan_work(struct work_struct *work)
 			(hw_priv->advanceScanElems.scanMode ==
 				ATBM_APOLLO_SCAN_MEASUREMENT_PASSIVE) &&
 			(priv->join_status == ATBM_APOLLO_JOIN_STATUS_STA) &&
-			(hw_priv->channel->hw_value ==
+			(channel_hw_value(hw_priv->channel) ==
 				advance_scan_req_channel)) {
 			/* If Advance Scan Request is for Serving Channel Device
 			 * should be Active and Filtering Should be Disable */
@@ -574,8 +608,7 @@ void atbm_scan_work(struct work_struct *work)
 			/* Disable Rx Beacon and Bssid filter */
 			ret = atbm_disable_filtering(priv);
 			if (ret)
-				wiphy_err(hw_priv->hw->wiphy,
-				"%s: Disable BSSID or Beacon filtering failed: %d.\n",
+				atbm_printk_warn("%s: Disable BSSID or Beacon filtering failed: %d.\n",
 				__func__, ret);
 		} else if (hw_priv->enable_advance_scan &&
 			(hw_priv->advanceScanElems.scanMode ==
@@ -592,7 +625,9 @@ void atbm_scan_work(struct work_struct *work)
 			if (priv->join_status == ATBM_APOLLO_JOIN_STATUS_MONITOR) {
 				/* FW bug: driver has to restart p2p-dev mode
 				 * after scan */
+#if defined(CONFIG_ATBM_STA_LISTEN) || defined(CONFIG_ATBM_SUPPORT_P2P)
 				atbm_disable_listening(priv);
+#endif
 			}
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 		}
@@ -605,7 +640,7 @@ void atbm_scan_work(struct work_struct *work)
 			(hw_priv->advanceScanElems.scanMode ==
 				ATBM_APOLLO_SCAN_MEASUREMENT_PASSIVE) &&
 			(priv->join_status == ATBM_APOLLO_JOIN_STATUS_STA) &&
-			(hw_priv->channel->hw_value ==
+			(channel_hw_value(hw_priv->channel) ==
 				advance_scan_req_channel)) {
 			/* WSM Lock should be held here for WSM APIs */
 			wsm_vif_lock_tx(priv);
@@ -635,7 +670,8 @@ void atbm_scan_work(struct work_struct *work)
 			}
 		}
 #endif
-		#ifndef ATBM_P2P_CHANGE
+#ifdef CONFIG_ATBM_SUPPORT_P2P
+#ifndef ATBM_P2P_CHANGE
 		while(priv->scan_again)
 		{
 			int status;
@@ -682,19 +718,17 @@ void atbm_scan_work(struct work_struct *work)
 			return;
 			
 		}
-		#else
+#else
 		while((hw_priv->scan.if_id == 1)&&(atomic_read(&hw_priv->go_bssid_set) == 1)&&
 			(atomic_read(&hw_priv->receive_go_resp) == 0))
 		{
 			int status;
-			printk(KERN_ERR "%s:p2p scan again,channel(%d)\n",__func__,atomic_read(&hw_priv->p2p_oper_channel));
+			atbm_printk_scan("%s:p2p scan again,channel(%d)\n",__func__,atomic_read(&hw_priv->p2p_oper_channel));
 			if(atomic_read(&hw_priv->p2p_oper_channel) == 0){
-				printk(KERN_ERR "%s:p2p_oper_channel is zero\n",__func__);
 				break;
 			}
 
 			if(!time_is_after_jiffies(hw_priv->p2p_scan_start_time+2*HZ)){
-				printk(KERN_ERR "%s:p2p has continued scaning a long time(2s),but .....\n",__func__);
 				atomic_set(&hw_priv->go_bssid_set,0);
 				atomic_set(&hw_priv->p2p_oper_channel,0);
 				break;
@@ -755,20 +789,19 @@ void atbm_scan_work(struct work_struct *work)
 
 			return;
 		}
-		#endif 
+#endif 
+#endif
 		if (hw_priv->scan.status < 0)
-			wiphy_dbg(priv->hw->wiphy,
-					"[SCAN] Scan failed (%d).\n",
-					hw_priv->scan.status);
+			atbm_printk_debug("[SCAN] Scan failed (%d).\n",hw_priv->scan.status);
 		else if (hw_priv->scan.req)
-			wiphy_dbg(priv->hw->wiphy,
-					"[SCAN] Scan completed.\n");
+			atbm_printk_debug("[SCAN] Scan completed.\n");
 		else
-			wiphy_dbg(priv->hw->wiphy,
-					"[SCAN] Scan canceled.\n");
+			atbm_printk_debug("[SCAN] Scan canceled.\n");
 
 		hw_priv->scan.req = NULL;
-		printk(KERN_ERR "%s:end(%d)\n",__func__,hw_priv->scan.if_id);
+		hw_priv->scan.cca = 0;
+		hw_priv->scan.req_wrap = NULL;
+		atbm_printk_scan("%s:end(%d)\n",__func__,hw_priv->scan.if_id);
 		atbm_scan_restart_delayed(priv);
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 		hw_priv->enable_advance_scan = false;
@@ -790,7 +823,11 @@ void atbm_scan_work(struct work_struct *work)
 			
 			if ((*it)->band != first->band)
 				break;
-
+			
+#ifdef CONFIG_ATBM_SCAN_SPLIT
+			if((hw_priv->scan.split == 1) && (i >= ATBM_SPLIT_SCAN_MAX_CHANNEL))
+				break;
+#endif
 #ifdef WIFI_ALLIANCE_CERTIF
 			if (((*it)->flags ^ first->flags) &  
 			#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0))
@@ -848,14 +885,16 @@ void atbm_scan_work(struct work_struct *work)
 #else
 		scan.numOfProbeRequests = 3;
 #endif
-#ifdef CONFIG_WIRELESS_EXT
-			//best channel scan, only send 1 probe request pkt
-			if(atbm_best_ch_scan_status_get() == 1)
+			if(hw_priv->scan.cca == 1)
 				scan.numOfProbeRequests = 1;
-#endif			
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 		}
 #endif /* CONFIG_ATBM_APOLLO_TESTMODE */
+		/*
+		*passive scan
+		*/
+		if(hw_priv->scan.passive)
+			scan.numOfProbeRequests = 0;
 		scan.numOfSSIDs = hw_priv->scan.n_ssids;
 		scan.ssids = &hw_priv->scan.ssids[0];
 		scan.numOfChannels = it - hw_priv->scan.curr;
@@ -872,6 +911,9 @@ void atbm_scan_work(struct work_struct *work)
 		if (priv->join_status == ATBM_APOLLO_JOIN_STATUS_STA) {
 			scan.scanType = WSM_SCAN_TYPE_BACKGROUND;
 			scan.scanFlags = WSM_SCAN_FLAG_FORCE_BACKGROUND;
+		}		
+		if(hw_priv->scan.cca == 1){
+			scan.scanFlags |= WSM_FLAG_BEST_CHANNEL_START;
 		}
 		scan.ch = atbm_kzalloc(
 			sizeof(struct wsm_scan_ch[it - hw_priv->scan.curr]),
@@ -884,10 +926,7 @@ void atbm_scan_work(struct work_struct *work)
 			ProbeRequestTime) + ChannelRemainTime;
 		maxChannelTime = (maxChannelTime < 35) ? 35 : maxChannelTime;
 		for (i = 0; i < scan.numOfChannels; ++i) {
-			scan.ch[i].number = hw_priv->scan.curr[i]->hw_value;
-#ifdef CONFIG_WIRELESS_EXT
-			atbm_scan_channel_rec(scan.ch[i].number);
-#endif
+			scan.ch[i].number = channel_hw_value(hw_priv->scan.curr[i]);
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 			if (hw_priv->enable_advance_scan) {
 				scan.ch[i].minChannelTime =
@@ -914,12 +953,9 @@ void atbm_scan_work(struct work_struct *work)
 						scan.ch[i].minChannelTime = 15;
 					scan.ch[i].maxChannelTime = maxChannelTime;
 				}
-#ifdef CONFIG_WIRELESS_EXT
-				//best channel scan, 500ms per channel
-				if(atbm_best_ch_scan_status_get() == 1){
+				if(hw_priv->scan.cca == 1){
 					scan.ch[i].maxChannelTime = 500;
 				}
-#endif
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 			}
 #endif
@@ -965,7 +1001,7 @@ void atbm_scan_work(struct work_struct *work)
 			(hw_priv->advanceScanElems.scanMode ==
 				ATBM_APOLLO_SCAN_MEASUREMENT_PASSIVE) &&
 			(priv->join_status == ATBM_APOLLO_JOIN_STATUS_STA) &&
-			(hw_priv->channel->hw_value == advance_scan_req_channel)) {
+			(channel_hw_value(hw_priv->channel)== advance_scan_req_channel)) {
 				/* Start Advance Scan Timer */
 				hw_priv->scan.status = atbm_advance_scan_start(hw_priv);
 				wsm_unlock_tx(hw_priv);
@@ -977,37 +1013,50 @@ void atbm_scan_work(struct work_struct *work)
 		*happens,can triger some errors.
 		*/
 		//hw_priv->scan.status = atbm_scan_start(priv, &scan);
-		printk(KERN_ERR "scan start band(%d),(%d)\n",scan.band,scan.numOfChannels);
+		atbm_printk_scan("scan start band(%d),(%d)\n",scan.band,scan.numOfChannels);
 		scan_status = atbm_scan_start(priv, &scan);
 		atbm_kfree(scan.ch);
 		if (WARN_ON(scan_status)){
 			hw_priv->scan.status = scan_status;
 			goto fail;
 		}
-		#ifndef ATBM_P2P_CHANGE
+#ifdef CONFIG_ATBM_SUPPORT_P2P
+#ifndef ATBM_P2P_CHANGE
 		if((priv->if_id == 1)&&(priv->join_status<=ATBM_APOLLO_JOIN_STATUS_MONITOR)&&(priv->scan_again == 0))
 		{
 			priv->scan_again = 1;
 		}
-		else
+else
 		{
 			priv->scan_again = 0;
 		}
-		#endif
+#endif
+#endif
 		hw_priv->scan.curr = it;
 	}
 	mutex_unlock(&hw_priv->conf_mutex);
 	return;
 
-fail:
+fail:	
 	hw_priv->scan.curr = hw_priv->scan.end;
 	mutex_unlock(&hw_priv->conf_mutex);
 	atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.work);
 	return;
+vif_err:
+	hw_priv->scan.req = NULL;
+	hw_priv->scan.cca = 0;
+	hw_priv->scan.req_wrap = NULL;
+	up(&hw_priv->scan.lock);
+	wsm_unlock_tx(hw_priv);
+	atbm_printk_err("[SCAN] interface removed\n");
+	ieee80211_scan_completed(hw_priv->hw,
+				 hw_priv->scan.status ? 1 : 0);
+	atbm_release_suspend(hw_priv);
+	return;
 }
-
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 #ifdef ROAM_OFFLOAD
-void atbm_sched_scan_work(struct work_struct *work)
+void atbm_sched_scan_work(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv = container_of(work, struct atbm_common,
 		scan.swork);
@@ -1026,7 +1075,7 @@ void atbm_sched_scan_work(struct work_struct *work)
 	/* Firmware gets crazy if scan request is sent
 	 * when STA is joined but not yet associated.
 	 * Force unjoin in this case. */
-	if (atbm_cancle_delayed_work(&priv->join_timeout,true) > 0) {
+	if (atbm_hw_cancel_delayed_work(&priv->join_timeout,true) > 0) {
 		atbm_join_timeout(&priv->join_timeout.work);
 	}
 	mutex_lock(&hw_priv->conf_mutex);
@@ -1100,7 +1149,7 @@ void atbm_hw_sched_scan_stop(struct atbm_common *hw_priv)
 	return;
 }
 #endif /*ROAM_OFFLOAD*/
-
+#endif
 
 static void atbm_scan_restart_delayed(struct atbm_vif *priv)
 {
@@ -1111,12 +1160,19 @@ static void atbm_scan_restart_delayed(struct atbm_vif *priv)
 		if (priv_delay == NULL)
 			continue;
 
-		if(!((priv_delay->delayed_link_loss) || (priv_delay->delayed_unjoin) ||
-			(priv_delay->join_status == ATBM_APOLLO_JOIN_STATUS_MONITOR)))
+		if(!(
+#ifndef CONFIG_TX_NO_CONFIRM
+			  (priv_delay->delayed_link_loss) ||
+#endif
+			  (priv_delay->delayed_unjoin) ||
+			  (priv_delay->join_status == ATBM_APOLLO_JOIN_STATUS_MONITOR)
+			)
+		  )
 			continue;
 
-		printk(KERN_ERR"%s:if_id(%d),scan_id(%d),join_status(%d),delayed_link_loss(%d),delayed_unjoin(%d)\n",
-			__func__,priv_delay->if_id,hw_priv->scan.if_id,priv_delay->join_status,priv_delay->delayed_link_loss,priv_delay->delayed_unjoin);
+		atbm_printk_scan("%s:if_id(%d),scan_id(%d),join_status(%d),delayed_unjoin(%d)\n",
+			__func__,priv_delay->if_id,hw_priv->scan.if_id,priv_delay->join_status,priv_delay->delayed_unjoin);
+#ifndef CONFIG_TX_NO_CONFIRM
 		if (priv_delay->delayed_link_loss) {
 			int tmo = priv_delay->cqm_beacon_loss_count;
 
@@ -1126,18 +1182,16 @@ static void atbm_scan_restart_delayed(struct atbm_vif *priv)
 			priv_delay->delayed_link_loss = 0;
 			/* Restart beacon loss timer and requeue
 			   BSS loss work. */
-			wiphy_dbg(priv_delay->hw->wiphy,
-					"[CQM] Requeue BSS loss in %d "
-					"beacons.\n", tmo);
+			atbm_printk_debug("[CQM] Requeue BSS loss in %d ""beacons.\n", tmo);
 			spin_lock_bh(&priv_delay->bss_loss_lock);
 			priv_delay->bss_loss_status = ATBM_APOLLO_BSS_LOSS_NONE;
 			spin_unlock_bh(&priv_delay->bss_loss_lock);
-			atbm_cancle_delayed_work(&priv_delay->bss_loss_work,false);
+			atbm_hw_cancel_delayed_work(&priv_delay->bss_loss_work,false);
 			atbm_hw_priv_queue_delayed_work(hw_priv,
 					&priv_delay->bss_loss_work,
 					tmo * HZ / 10);
 		}
-
+#endif
 		/* FW bug: driver has to restart p2p-dev mode after scan. */
 		if (priv_delay->join_status == ATBM_APOLLO_JOIN_STATUS_MONITOR) {
 			/*atbm_enable_listening(priv);*/
@@ -1147,7 +1201,7 @@ static void atbm_scan_restart_delayed(struct atbm_vif *priv)
 
 		if (priv_delay->delayed_unjoin) {
 			priv_delay->delayed_unjoin = false;
-			printk("%s:restart delayed_unjoin\n",__func__);
+			atbm_printk_scan("%s:restart delayed_unjoin\n",__func__);
 			#if 1
 			wsm_lock_tx_async(hw_priv);
 			#endif
@@ -1156,10 +1210,12 @@ static void atbm_scan_restart_delayed(struct atbm_vif *priv)
 		}
 	}
 }
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 void atbm_scan_listenning_restart_delayed(struct atbm_vif *priv)
 {
 	atbm_scan_restart_delayed(priv);
 }
+#endif
 static void atbm_scan_complete(struct atbm_common *hw_priv, int if_id)
 {
 	struct atbm_vif *priv;
@@ -1171,19 +1227,21 @@ static void atbm_scan_complete(struct atbm_common *hw_priv, int if_id)
 		mutex_lock(&hw_priv->conf_mutex);
 		priv = __ABwifi_hwpriv_to_vifpriv(hw_priv, if_id);
 		if (priv) {
-			wiphy_dbg(priv->hw->wiphy, "[SCAN] Direct probe "
-				  "complete.\n");
+			atbm_printk_debug("[SCAN] Direct probe complete.\n");
 			atbm_scan_restart_delayed(priv);
 		} else {
-			wiphy_dbg(priv->hw->wiphy, "[SCAN] Direct probe "
-				  "complete without interface!\n");
+			atbm_printk_debug("[SCAN] Direct probe complete without interface!\n");
 		}
 		mutex_unlock(&hw_priv->conf_mutex);
 		hw_priv->scan.direct_probe = 0;
 		up(&hw_priv->scan.lock);
 		wsm_unlock_tx(hw_priv);
-	} else {
+	} else if(atbm_scan_split_running(hw_priv) == false){
 		atbm_scan_work(&hw_priv->scan.work);
+	}else {
+#ifndef CONFIG_ATBM_SCAN_SPLIT
+		BUG_ON(1);	
+#endif
 	}
 
 	
@@ -1201,17 +1259,17 @@ void atbm_scan_complete_cb(struct atbm_common *hw_priv,
 		return;
 	}
 
-
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 #ifdef ROAM_OFFLOAD
 	if (hw_priv->auto_scanning)
 		atbm_hw_priv_queue_delayed_work(hw_priv,
 				&hw_priv->scan.timeout, 0);
 #endif /*ROAM_OFFLOAD*/
-
+#endif
 	if (unlikely(priv->mode == NL80211_IFTYPE_UNSPECIFIED)) {
 		/* STA is stopped. */
 		atbm_priv_vif_list_read_unlock(&priv->vif_lock);
-		printk("%s:priv->mode == NL80211_IFTYPE_UNSPECIFIED\n",__func__);
+		atbm_printk_err("[SCAN] mode err\n");
 		return;
 	}
 	atbm_priv_vif_list_read_unlock(&priv->vif_lock);
@@ -1232,14 +1290,29 @@ void atbm_scan_complete_cb(struct atbm_common *hw_priv,
 		return ;
 	}
 #endif
-	printk("hw_priv->scan.status %d\n",hw_priv->scan.status);
+	atbm_printk_scan("hw_priv->scan.status %d\n",hw_priv->scan.status);
 
 	if(hw_priv->scan.status == -ETIMEDOUT)
-		wiphy_warn(hw_priv->hw->wiphy,
-			"Scan timeout already occured. Don't cancel work");
+		atbm_printk_warn("Scan timeout already occured. Don't cancel work");
 	if ((hw_priv->scan.status != -ETIMEDOUT) &&
-		(atbm_cancle_delayed_work(&hw_priv->scan.timeout,false/*can't set to true,because this function is call in bh, must not wait in bh */) > 0)) {
+		(atbm_hw_cancel_delayed_work(&hw_priv->scan.timeout,false/*can't set to true,because this function is call in bh, must not wait in bh */) > 0)) {
 		hw_priv->scan.status = 1;
+		if(hw_priv->scan.cca){
+			struct ieee80211_internal_scan_notity notify;
+			notify.cca.val = arg->busy_ratio;
+			notify.cca.val_len = sizeof(arg->busy_ratio);
+			notify.success = true;
+			ieee80211_scan_cca_notify(hw_priv->hw,&notify);
+		}
+#ifdef SIGMSTAR_SCAN_FEATURE
+		else {
+				int i;
+				struct ieee80211_local *local = hw_to_local(hw_priv->hw);
+				for(i=0;(i<CHANNEL_NUM)&&(i<14);i++){
+				local->noise_floor[i] = arg->busy_ratio[i];
+				}
+		}
+#endif //#ifdef SIGMSTAR_SCAN_FEATURE
 		atbm_hw_priv_queue_delayed_work(hw_priv,
 				&hw_priv->scan.timeout, 0);
 	}
@@ -1247,7 +1320,7 @@ void atbm_scan_complete_cb(struct atbm_common *hw_priv,
 //#ifdef CONFIG_WIRELESS_EXT
 extern int wsm_start_scan_etf(struct atbm_common *hw_priv, struct ieee80211_vif *vif );
 
-void etf_scan_end_work(struct work_struct *work)
+void etf_scan_end_work(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv =
 		container_of(work, struct atbm_common, etf_tx_end_work);
@@ -1258,7 +1331,7 @@ void etf_scan_end_work(struct work_struct *work)
 	etf_v2_scan_end(hw_priv,priv->vif);
 }
 //#endif  //CONFIG_WIRELESS_EXT
-void atbm_scan_timeout(struct work_struct *work)
+void atbm_scan_timeout(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv =
 		container_of(work, struct atbm_common, scan.timeout.work);
@@ -1289,8 +1362,7 @@ void atbm_scan_timeout(struct work_struct *work)
 		if (hw_priv->scan.status > 0)
 			hw_priv->scan.status = 0;
 		else if (!hw_priv->scan.status) {
-			wiphy_warn(hw_priv->hw->wiphy,
-				"Timeout waiting for scan "
+			atbm_printk_warn("Timeout waiting for scan "
 				"complete notification.\n");
 			hw_priv->scan.status = -ETIMEDOUT;
 			hw_priv->scan.curr = hw_priv->scan.end;
@@ -1307,17 +1379,19 @@ void atbm_scan_timeout(struct work_struct *work)
 			}
 		}
 		atbm_scan_complete(hw_priv, hw_priv->scan.if_id);
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 #ifdef ROAM_OFFLOAD
 	} else if (hw_priv->auto_scanning) {
 		hw_priv->auto_scanning = 0;
 		ieee80211_sched_scan_results(hw_priv->hw);
 #endif /*ROAM_OFFLOAD*/
+#endif
 	}
 
 }
 
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
-void atbm_advance_scan_timeout(struct work_struct *work)
+void atbm_advance_scan_timeout(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv =
 		container_of(work, struct atbm_common, advance_scan_timeout.work);
@@ -1357,11 +1431,14 @@ void atbm_advance_scan_timeout(struct work_struct *work)
 }
 #endif
 
-void atbm_probe_work(struct work_struct *work)
+void atbm_probe_work(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv =
 		container_of(work, struct atbm_common, scan.probe_work.work);
-	struct atbm_vif *priv, *vif;
+	struct atbm_vif *priv;
+#ifndef CONFIG_TX_NO_CONFIRM
+	struct atbm_vif	*vif;
+#endif
 	u8 queueId = atbm_queue_get_queue_id(hw_priv->pending_frame_id);
 	struct atbm_queue *queue = &hw_priv->tx_queue[queueId];
 	const struct atbm_txpriv *txpriv;
@@ -1387,9 +1464,10 @@ void atbm_probe_work(struct work_struct *work)
 	u8 *ies;
 	size_t ies_len;
 	int ret = 1;
+#ifndef CONFIG_TX_NO_CONFIRM
 	int i;
-	wiphy_dbg(hw_priv->hw->wiphy, "[SCAN] Direct probe work.\n");
-	printk(KERN_ERR "[SCAN] Direct probe work.\n");
+#endif
+	atbm_printk_scan("[SCAN] Direct probe work.\n");
 	BUG_ON(queueId >= 4);
 	BUG_ON(!hw_priv->channel);
 	if(atbm_bh_is_term(hw_priv))
@@ -1411,7 +1489,7 @@ void atbm_probe_work(struct work_struct *work)
 			atbm_hw_priv_queue_delayed_work(hw_priv,
 						&hw_priv->scan.probe_work, HZ / 10);
 			mutex_unlock(&hw_priv->conf_mutex);
-			printk(KERN_ERR "%s:scanning so delay work\n",__func__);
+			atbm_printk_scan("%s:scanning so delay work\n",__func__);
 		}
 		else{
 			#ifdef CONFIG_ATBM_APOLLO_TESTMODE
@@ -1422,7 +1500,7 @@ void atbm_probe_work(struct work_struct *work)
 			#endif
 			wsm_unlock_tx(hw_priv);
 			mutex_unlock(&hw_priv->conf_mutex);
-			printk(KERN_ERR "%s:listenning or other delete pendding frame\n",__func__);
+			atbm_printk_scan("%s:listenning or other delete pendding frame\n",__func__);
 		}
 		return;
 	}
@@ -1432,14 +1510,14 @@ void atbm_probe_work(struct work_struct *work)
 		up(&hw_priv->scan.lock);
 		mutex_unlock(&hw_priv->conf_mutex);
 		wsm_unlock_tx(hw_priv);
-		printk(KERN_ERR "[SCAN] Direct probe work. return\n");
+		atbm_printk_err("[SCAN] Direct probe work. return\n");
 		return;
 	}
 	priv = __ABwifi_hwpriv_to_vifpriv(hw_priv, txpriv->if_id);
 	if (!priv) {
 		up(&hw_priv->scan.lock);
 		mutex_unlock(&hw_priv->conf_mutex);
-		printk(KERN_ERR "[SCAN] Direct probe work. !priv\n");
+		atbm_printk_err("[SCAN] Direct probe work. !priv\n");
 		return;
 	}
 	wsm = (struct wsm_tx *)frame.skb->data;
@@ -1454,13 +1532,15 @@ void atbm_probe_work(struct work_struct *work)
 		else
 			scan.scanFlags &= ~WSM_FLAG_MAC_INSTANCE_1;
 	}
+#ifndef CONFIG_TX_NO_CONFIRM
 	atbm_for_each_vif(hw_priv, vif, i) {
 		if (!vif)
 			continue;
 		if (vif->bss_loss_status > ATBM_APOLLO_BSS_LOSS_NONE)
 			scan.scanFlags |= WSM_SCAN_FLAG_FORCE_BACKGROUND;
 	}
-	ch[0].number = hw_priv->channel->hw_value;
+#endif
+	ch[0].number = channel_hw_value(hw_priv->channel);
 
 	atbm_skb_pull(frame.skb, txpriv->offset);
 
@@ -1485,10 +1565,10 @@ void atbm_probe_work(struct work_struct *work)
 			atbm_skb_trim(frame.skb, frame.skb->len - ssids[0].length);
 		}
 	}
-
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 	if (priv->if_id == 0)
 		atbm_remove_wps_p2p_ie(&frame);
-
+#endif
 	/* FW bug: driver has to restart p2p-dev mode after scan */
 	if (priv->join_status == ATBM_APOLLO_JOIN_STATUS_MONITOR) {
 		WARN_ON(1);
@@ -1524,267 +1604,6 @@ void atbm_probe_work(struct work_struct *work)
 
 	return;
 }
-
-
-#ifdef ATBM_PRIVATE_IE
-#define SCAN_CHANNEL_NUM 14
-extern 	void frame_hexdump(char *prefix, u8 *data, int len);
-struct sk_buff *atbm_ieee80211_probereq_get(struct atbm_common *hw_priv)
-{
-	struct ieee80211_hdr_3addr *hdr;
-	struct sk_buff *skb;
-	size_t ie_ssid_len = 0;
-	u8 *pos;
-	u32 ratebit[2] = {0,0};
-	u8 i = 0;
-	size_t ielen = 0;
-	struct wiphy *wiphy = hw_priv->hw->wiphy;
-
-	skb = atbm_dev_alloc_skb(1024);
-	if (!skb)
-		return NULL;
-
-	//skb_reserve(skb, local->hw.extra_tx_headroom);
-
-	hdr = (struct ieee80211_hdr_3addr *) skb_put(skb, sizeof(*hdr));
-	memset(hdr, 0, sizeof(*hdr));
-	hdr->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
-					 IEEE80211_STYPE_PROBE_REQ);
-	memset(hdr->addr1, 0xff, ETH_ALEN);
-	memcpy(hdr->addr2, hw_priv->addresses[0].addr, ETH_ALEN);
-	memset(hdr->addr3, 0xff, ETH_ALEN);
-
-	for (i = 0; i < IEEE80211_NUM_BANDS; i++)  
-		if (wiphy->bands[i])   
-			ratebit[i] =(1 << wiphy->bands[i]->n_bitrates) - 1;
-
-#if (0)//test hidden ssid
-	u8 ssid_len = 0;
-	u8 *ssid = "altobeam_test";
-	ssid_len = strlen(ssid);
-
-	ie_ssid_len = ssid_len + 2;
-	pos = skb_put(skb, ie_ssid_len);
-	
-	*pos++ = ATBM_WLAN_EID_SSID;
-	*pos++ = ssid_len;
-	
-	memcpy(pos, ssid, ssid_len);
-	pos += ssid_len;
-#else
-	ie_ssid_len = 2;//without ssid
- 	pos = skb_put(skb, ie_ssid_len);
-	*pos++ = ATBM_WLAN_EID_SSID;
-	*pos++ = 0;
-#endif
-	ielen = ieee80211_build_preq_ies(hw_to_local(hw_priv->hw),pos,
-					 NULL, 0, IEEE80211_BAND_2GHZ,
-					 ratebit[IEEE80211_BAND_2GHZ], 0);
-	atbm_skb_put(skb,ielen);
-	frame_hexdump("probeReq",(u8*)skb->data,skb->len);
-	return skb;
-}
-
-void atbm_private_scan(struct atbm_vif *priv, u16 channel)
-{
-	struct atbm_vif *vif;
-	struct atbm_common *hw_priv = ABwifi_vifpriv_to_hwpriv(priv);
-	struct wsm_template_frame frame = {
-		.frame_type = WSM_FRAME_TYPE_PROBE_REQUEST,
-	};
-	struct wsm_ssid ssids[1] = {{
-		.length = 0,
-	} };
-	struct wsm_scan_ch ch[SCAN_CHANNEL_NUM];
-	
-	struct wsm_scan scan = {
-		.scanType = WSM_SCAN_TYPE_FOREGROUND,
-		.numOfProbeRequests = 5,
-		.probeDelay = 20,
-		.numOfChannels = 1,
-		.ssids = ssids,
-		.ch = ch,
-	};
-	u8 *ies;
-	size_t ies_len;
-	int ret = 1;
-	int i;
-	wiphy_dbg(hw_priv->hw->wiphy, "[SCAN] Direct private work.\n");
-	printk(KERN_ERR "[SCAN] Direct private work. %p\n", hw_priv);
-	//printk(KERN_ERR "[SCAN] %s: 1\n",__func__);
-	//printk(KERN_ERR "[SCAN] %s: 2\n",__func__);
-	
-	wsm_lock_tx(hw_priv);
-	if(atbm_bh_is_term(hw_priv))
-	{
-		wsm_unlock_tx(hw_priv);
-		return;
-	}
-	//printk(KERN_ERR "[SCAN] %s: 3\n",__func__);
-	#if 0
-	mutex_lock(&hw_priv->conf_mutex);
-	if (unlikely(down_trylock(&hw_priv->scan.lock))) {
-		/* Scan is already in progress. Requeue self. */
-		if (unlikely(atomic_read(&hw_priv->scan.in_progress))){
-			#if 0
-			schedule();
-			atbm_hw_priv_queue_delayed_work(hw_priv,
-						&hw_priv->scan.probe_work, HZ / 10);
-			mutex_unlock(&hw_priv->conf_mutex);
-			printk(KERN_ERR "%s:private scanning so delay work\n",__func__);
-			#endif
-		}
-		else{
-			#if 0
-			#ifdef CONFIG_ATBM_APOLLO_TESTMODE
-			BUG_ON(atbm_queue_remove(hw_priv, queue,
-					hw_priv->pending_frame_id));
-			#else
-			BUG_ON(atbm_queue_remove(queue, hw_priv->pending_frame_id));
-			#endif
-			wsm_unlock_tx(hw_priv);
-			mutex_unlock(&hw_priv->conf_mutex);
-			printk(KERN_ERR "%s:private listenning or other delete pendding frame\n",__func__);
-			#endif
-		}	
-		printk(KERN_ERR "%s:private listenning or other delete pendding frame\n",__func__);
-		mutex_unlock(&hw_priv->conf_mutex);
-		wsm_unlock_tx(hw_priv);
-		return;
-	}
-	#else
-	down(&hw_priv->scan.lock);
-	mutex_lock(&hw_priv->conf_mutex);
-	#endif
-	//printk(KERN_ERR "[SCAN] %s: 4\n",__func__);
-
-	//if (atbm_queue_get_skb(queue,	hw_priv->pending_frame_id,
-	//		&frame.skb, &txpriv)) {
-	//	up(&hw_priv->scan.lock);
-	//	mutex_unlock(&hw_priv->conf_mutex);
-	//	wsm_unlock_tx(hw_priv);
-	//	printk(KERN_ERR "[SCAN] Direct private work. return\n");
-	//	return;
-	//}
-	
-	frame.skb = atbm_ieee80211_probereq_get(hw_priv);
-	if(frame.skb==NULL){
-		
-		printk(KERN_ERR "[SCAN] %s:%d\n",__func__,__LINE__);
-		return;
-	}
-	
-	frame.skb = atbm_mgmt_add_private_ie(frame.skb);
-	
-	//printk(KERN_ERR "[SCAN] %s: 5\n",__func__);
-	//priv = __ABwifi_hwpriv_to_vifpriv(hw_priv, priv->if_id);
-	//if (!priv) {
-	//	up(&hw_priv->scan.lock);
-	//	mutex_unlock(&hw_priv->conf_mutex);
-	//	printk(KERN_ERR "[SCAN] Direct private work. !priv\n");
-	//	return;
-	//}
-	//printk(KERN_ERR "[SCAN] %s: 6\n",__func__);
-	//printk(KERN_ERR "[SCAN] %s: skb 0x%x\n",__func__, frame.skb);
-	//printk(KERN_ERR "[SCAN] %s: skb data 0x%x\n",__func__, frame.skb->data);
-	//wsm = (struct wsm_tx *)frame.skb->data;
-	scan.maxTransmitRate = 0;//wsm->maxTxRate;
-	//printk(KERN_ERR "[SCAN] %s: 7\n",__func__);
-	scan.band = (hw_priv->channel->band == IEEE80211_BAND_5GHZ) ?
-		WSM_PHY_BAND_5G : WSM_PHY_BAND_2_4G;
-	if (priv->join_status == ATBM_APOLLO_JOIN_STATUS_STA) {
-		scan.scanType = WSM_SCAN_TYPE_BACKGROUND;
-		scan.scanFlags = WSM_SCAN_FLAG_FORCE_BACKGROUND;
-		if (priv->if_id)
-			scan.scanFlags |= WSM_FLAG_MAC_INSTANCE_1;
-		else
-			scan.scanFlags &= ~WSM_FLAG_MAC_INSTANCE_1;
-	}
-	//printk(KERN_ERR "[SCAN] %s: 8\n",__func__);
-	atbm_for_each_vif(hw_priv, vif, i) {
-		if (!vif)
-			continue;
-		if (vif->bss_loss_status > ATBM_APOLLO_BSS_LOSS_NONE)
-			scan.scanFlags |= WSM_SCAN_FLAG_FORCE_BACKGROUND;
-	}
-	
-	//ch[0].number = hw_priv->channel->hw_value;
-	
-	if(channel == 0){
-		for(i=0; i<SCAN_CHANNEL_NUM; i++){
-			ch[i].number = i+1;
-			ch[i].maxChannelTime = 55;
-			ch[i].minChannelTime = 35;
-			atbm_scan_channel_rec(ch[i].number);
-		}
-
-		scan.numOfChannels = SCAN_CHANNEL_NUM;
-	}else{
-		ch[0].number = channel;
-		ch[0].maxChannelTime = 55;
-		ch[0].minChannelTime = 35;
-	}
-
-	//skb_pull(frame.skb, txpriv->offset);
-	//printk(KERN_ERR "[SCAN] %s: 9-----%d\n",__func__,ch[0].number);
-
-	ies = &frame.skb->data[sizeof(struct ieee80211_hdr_3addr)];
-	ies_len = frame.skb->len - sizeof(struct ieee80211_hdr_3addr);
-	if (ies_len) {
-		u8 *ssidie =
-			(u8 *)cfg80211_find_ie(ATBM_WLAN_EID_SSID, ies, ies_len);
-		if (ssidie && ssidie[1] && ssidie[1] <= sizeof(ssids[0].ssid)) {
-			u8 *nextie = &ssidie[2 + ssidie[1]];
-			/* Remove SSID from the IE list. It has to be provided
-			 * as a separate argument in atbm_scan_start call */
-
-			/* Store SSID localy */
-			ssids[0].length = ssidie[1];
-			memcpy(ssids[0].ssid, &ssidie[2], ssids[0].length);
-			scan.numOfSSIDs = 1;
-
-			/* Remove SSID from IE list */
-			ssidie[1] = 0;
-			memmove(&ssidie[2], nextie, &ies[ies_len] - nextie);
-			skb_trim(frame.skb, frame.skb->len - ssids[0].length);
-		}
-	}
-	//printk(KERN_ERR "[SCAN] %s: 10\n",__func__);
-
-	if (priv->if_id == 0)
-		atbm_remove_wps_p2p_ie(&frame);
-
-	/* FW bug: driver has to restart p2p-dev mode after scan */
-	if (priv->join_status == ATBM_APOLLO_JOIN_STATUS_MONITOR) {
-		WARN_ON(1);
-		/*atbm_disable_listening(priv);*/
-	}
-	//printk(KERN_ERR "[SCAN] %s: 11\n",__func__);
-	ret = WARN_ON(wsm_set_template_frame(hw_priv, &frame,
-				priv->if_id));
-	//printk(KERN_ERR "[SCAN] %s: 12\n",__func__);
-
-	hw_priv->scan.direct_probe = 1;
-	hw_priv->scan.if_id = priv->if_id;
-	hw_priv->scan.status = 0;
-	//priv->tmpframe_probereq_set = 1;
-	if (!ret) {
-		//wsm_flush_tx(hw_priv);
-		ret = WARN_ON(atbm_scan_start(priv, &scan));
-	}
-	//printk(KERN_ERR "[SCAN] %s: 13\n",__func__);
-	mutex_unlock(&hw_priv->conf_mutex);
-	if (ret) {
-		hw_priv->scan.direct_probe = 0;
-		up(&hw_priv->scan.lock);
-		wsm_unlock_tx(hw_priv);
-	}
-	//printk(KERN_ERR "[SCAN] %s: 15\n",__func__);
-	atbm_dev_kfree_skb(frame.skb);
-	return;
-}
-
-#endif
 void atbm_wait_scan_complete_sync(struct atbm_common *hw_priv)
 {
 	down(&hw_priv->scan.lock);
@@ -1794,14 +1613,14 @@ void atbm_wait_scan_complete_sync(struct atbm_common *hw_priv)
 	*/
 	mutex_unlock(&hw_priv->conf_mutex);
 	up(&hw_priv->scan.lock);
-	printk(KERN_ERR "%s\n",__func__);
+	atbm_printk_scan( "%s\n",__func__);
 }
 void atbm_cancel_hw_scan(struct ieee80211_hw *hw,struct ieee80211_vif *vif)
 {
 	struct atbm_common *hw_priv = hw->priv;
 	struct atbm_vif *priv = ABwifi_get_vif_from_ieee80211(vif);
 
-	printk(KERN_DEBUG "%s:[%d]\n",__func__,priv->if_id);
+	atbm_printk_scan( "%s:[%d]\n",__func__,priv->if_id);
 
 	atbm_wait_scan_complete_sync(hw_priv);
 }

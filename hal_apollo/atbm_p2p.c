@@ -40,7 +40,6 @@
 #define	P2P_PROVISION_DISC_RESP				8
 #define	P2POUI							0x506F9A09
 #define ACT_PUBLIC_P2P   9  // WIFI_DIRECT
-#define ATBM_WLAN_CATEGORY_PUBLIC 4 //IEEE 802.11 public action frames
 
 #define _VENDOR_SPECIFIC_IE_		221
 #define	P2P_ATTR_GO_INTENT				0x04
@@ -49,6 +48,7 @@
 #define _PUBLIC_ACTION_IE_OFFSET_	8
 #define P2P_GET_LE16(a) ((u16) (((a)[1] << 8) | (a)[0]))
 
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 
 u8 *atbm_get_p2p_attr(u8 *p2p_ie, u32 p2p_ielen, u8 target_attr_id ,u8 *buf_attr, u32 *len_attr)
 {
@@ -190,9 +190,9 @@ u8 P2P_change_negotation_intent(u8 *pframe, u32 len ,int intent)
 		pAttr_content = atbm_get_p2p_attr_content(p2p_ie, p2p_ielen, P2P_ATTR_GO_INTENT , &attr_content, &attr_contentlen);
 
 		if ( pAttr_content ) 		{
-			printk( "change intent %d %x %x\n", intent,*pAttr_content,pAttr_content[1] );
+			atbm_printk_p2p( "change intent %d %x %x\n", intent,*pAttr_content,pAttr_content[1] );
 			*pAttr_content = ((u8)intent<<1)|(pAttr_content[0] & 1);	//	include both intent and tie breaker values.
-			printk( "change2 intent %x %x\n", *pAttr_content,pAttr_content[1] );
+			atbm_printk_p2p( "change2 intent %x %x\n", *pAttr_content,pAttr_content[1] );
 		}		
 	}
 	return 1;
@@ -217,7 +217,7 @@ int TxRxPublicActionFrame(u8 *pframe ,u32 len,int bTx)
 	{		
 		if ( cpu_to_be32( *( ( u32* ) ( frame_body + 2 ) ) ) == P2POUI )
 		{
-			printk("TxRxPublicActionFrame %d\n",frame_body[ 6 ] );
+			atbm_printk_p2p("TxRxPublicActionFrame %d\n",frame_body[ 6 ] );
 			if(( frame_body[ 6 ] == P2P_GO_NEGO_REQ)//OUI Subtype 
 				||( frame_body[ 6 ] == P2P_GO_NEGO_RESP))
 			{
@@ -304,12 +304,12 @@ static void ieee80211_change_p2p_channel_list_to_special_channel(u8* channel_lis
 		number_channel = pos[1];
 		pos += 2;
 		if((pos+number_channel>end)||(number_channel>14)){
-			printk(KERN_ERR "%s:number_channel[%d] err\n",__func__,number_channel);
+			atbm_printk_p2p("%s:number_channel[%d] err\n",__func__,number_channel);
 			break;
 		}
 		for(index=0;index<number_channel;index++){
 			if(pos[index]<=14){
-				printk(KERN_DEBUG "change channel(%d) to channel(%d)\n",pos[index],channel_num);
+				atbm_printk_p2p("change channel(%d) to channel(%d)\n",pos[index],channel_num);
 				pos[index] = channel_num;
 			}
 		}
@@ -338,7 +338,7 @@ void atbm_parase_p2p_scan_resp(struct atbm_vif *priv,struct sk_buff *skb)
 	if(priv->if_id != 1){
 		return;
 	}
-	printk(KERN_DEBUG "%s:go_bssid_set(%d),receive_go_resp(%d)\n",__func__,atomic_read(&hw_priv->go_bssid_set),
+	atbm_printk_p2p("go_bssid_set(%d),receive_go_resp(%d)\n",atomic_read(&hw_priv->go_bssid_set),
 		atomic_read(&hw_priv->receive_go_resp));
 	if(atomic_read(&hw_priv->go_bssid_set) != 1){
 		return;
@@ -346,7 +346,7 @@ void atbm_parase_p2p_scan_resp(struct atbm_vif *priv,struct sk_buff *skb)
 	if(atomic_read(&hw_priv->receive_go_resp) == 1){
 		return;
 	}
-	printk(KERN_DEBUG "%s:go_bssid(%pM),bssid(%pM)\n",__func__,hw_priv->go_bssid,mgmt->bssid);
+	atbm_printk_p2p("go_bssid(%pM),bssid(%pM)\n",hw_priv->go_bssid,mgmt->bssid);
 	if(!memcmp(hw_priv->go_bssid,mgmt->bssid,6)){
 		atomic_set(&hw_priv->receive_go_resp,1);
 	}
@@ -455,12 +455,10 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 
 	/* drop too small frames */
 	if (len < IEEE80211_MIN_ACTION_SIZE){
-		printk(KERN_ERR "%s:len(%d) is err\n",__func__,len);
 		return false;
 	}
 
-	if(mgmt->u.action.category != WLAN_CATEGORY_PUBLIC){
-		printk(KERN_ERR "%s:category(%d) is err\n",__func__,mgmt->u.action.category);
+	if(mgmt->u.action.category != ATBM_WLAN_CATEGORY_PUBLIC){
 		return false;
 	}
 
@@ -468,7 +466,6 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 	p2p_data_len = len - offsetof(struct atbm_ieee80211_mgmt, u.action.category);
 
 	if((p2p_check_offs = ieee80211_p2p_action_check(p2p_data,p2p_data_len))==-1){
-		printk(KERN_ERR "%s:p2p_check_offs is err\n",__func__);
 		return false;
 	}
 	p2p_data_len -= p2p_check_offs;
@@ -481,7 +478,7 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 		return false;
 	
 	p2p_msg.dialog_token = p2p_data[1];
-	printk(KERN_DEBUG "%s:operating_channel(%p),txrx(%d)\n",__func__,p2p_msg.operating_channel,(int)tx);
+	atbm_printk_p2p("%s:operating_channel(%p),txrx(%d)\n",__func__,p2p_msg.operating_channel,(int)tx);
 	
 	if(p2p_data[0] == ATBM_P2P_INVITATION_REQ){
 		if(p2p_msg.operating_channel)
@@ -495,7 +492,7 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 	*/
 	while(p2p_msg.status){
 		// 3 = 1(Attribute ID) + 2(Length)
-		printk(KERN_ERR "%s:status(%d),action(%d)\n",__func__,*(p2p_msg.status+3),p2p_data[0]);
+		atbm_printk_p2p("%s:status(%d),action(%d)\n",__func__,*(p2p_msg.status+3),p2p_data[0]);
 		break;
 	}
 	#ifdef ATBM_CHANGE_LOCAL_REMOUT_ROLE
@@ -517,7 +514,7 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 			*go_intent_pos = ATBM_STA_INTEND;
 		}
 
-		printk(KERN_DEBUG "%s:org_intend(%d),new_intend(%d),txrx(%d)\n",__func__,org_intend,*go_intent_pos,tx);
+		atbm_printk_p2p("%s:org_intend(%d),new_intend(%d),txrx(%d)\n",__func__,org_intend,*go_intent_pos,tx);
 		break;
 	}
 	#endif
@@ -528,14 +525,14 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 		bool combination = false;
 		
 		combination = atbm_check_channel_combination(hw_priv,priv);		
-		printk(KERN_DEBUG "%s:chan_mode(%x),operating_channel_combination(%d)\n",__func__,(int)combination,
+		atbm_printk_p2p("%s:chan_mode(%x),operating_channel_combination(%d)\n",__func__,(int)combination,
 			atomic_read(&hw_priv->operating_channel_combination));
 		// attr_id(1)+len(2)+contry_string(3)+operating_class(1)+channel_num(1)
 		operating_channel_num = p2p_msg.operating_channel[7];
 		local_channel = operating_channel_num>14?6:operating_channel_num;
 		if(combination == true)
-			local_channel = hw_priv->channel->hw_value;		
-		printk(KERN_ERR "%s:operating_channel_num(%d),local_channel(%d),action(%d),tx(%d)\n",__func__,
+			local_channel = channel_hw_value(hw_priv->channel);		
+		atbm_printk_p2p("%s:operating_channel_num(%d),local_channel(%d),action(%d),tx(%d)\n",__func__,
 			operating_channel_num,local_channel,p2p_data[0],(int)tx);
 		/*
 		*if the p2p process is neg req, neg resp and neg cfg,we
@@ -544,7 +541,7 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 		if(p2p_data[0] == ATBM_P2P_GO_NEG_CONF){
 			if(combination == true)
 				WARN_ON(operating_channel_num != local_channel);
-			printk(KERN_ERR"%s:ATBM_P2P_GO_NEG_CONF\n",__func__);
+			atbm_printk_p2p("%s:ATBM_P2P_GO_NEG_CONF\n",__func__);
 			goto set_oper_channel;
 		}
 		if((p2p_data[0] != ATBM_P2P_INVITATION_REQ)&&(p2p_data[0] != ATBM_P2P_INVITATION_RESP)){
@@ -552,7 +549,7 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 			if(((p2p_data[0] != ATBM_P2P_GO_NEG_REQ)&&(p2p_data[0] != ATBM_P2P_GO_NEG_RESP))||(combination == false))
 				break;
 			else{
-				printk(KERN_ERR "%s:change_channel_and_list,local_channel(%d)\n",__func__,local_channel);
+				atbm_printk_p2p("%s:change_channel_and_list,local_channel(%d)\n",__func__,local_channel);
 				goto change_channel_and_list;
 			}
 				
@@ -562,7 +559,7 @@ bool atbm_parase_p2p_action_frame(struct atbm_vif *priv,struct sk_buff *skb,bool
 		*/
 		if(p2p_data[0] == ATBM_P2P_INVITATION_REQ)
 			atomic_set(&hw_priv->p2p_oper_channel,0);
-		printk(KERN_DEBUG "%s:tx(%d),action(%d),operating_channel_num(%d),p2p_oper_channel(%d)\n",
+		atbm_printk_p2p("%s:tx(%d),action(%d),operating_channel_num(%d),p2p_oper_channel(%d)\n",
 		__func__,(int)tx,(int)p2p_data[0],(int)operating_channel_num,(int)atomic_read(&hw_priv->p2p_oper_channel));
 		if(atomic_read(&hw_priv->p2p_oper_channel)) WARN_ON(local_channel != atomic_read(&hw_priv->p2p_oper_channel));
 		local_channel = atomic_read(&hw_priv->p2p_oper_channel)?atomic_read(&hw_priv->p2p_oper_channel):local_channel;
@@ -588,18 +585,18 @@ change_channel_and_list:
 		if(p2p_data[0] != ATBM_P2P_INVITATION_RESP)
 			break;
 set_oper_channel:
-		printk(KERN_DEBUG "%s p2p_oper_channel(%d)\n",__func__,local_channel);
+		atbm_printk_p2p("%s p2p_oper_channel(%d)\n",__func__,local_channel);
 		atomic_set(&hw_priv->p2p_oper_channel,local_channel);
 		break;
 	}
-	printk(KERN_DEBUG "%s:group_bssid(%p),action(%x)\n",__func__,p2p_msg.group_bssid,p2p_data[0]);
+	atbm_printk_p2p("%s:group_bssid(%p),action(%x)\n",__func__,p2p_msg.group_bssid,p2p_data[0]);
 	while(((p2p_data[0] == ATBM_P2P_INVITATION_REQ)||(p2p_data[0] == ATBM_P2P_INVITATION_RESP))&&(p2p_msg.group_bssid))
 	{
 		if(ATBM_WPA_GET_LE16((const u8*)(p2p_msg.group_bssid+1)) != 6){
-			printk(KERN_ERR "%s:group_bssid is err(%d)\n",__func__,ATBM_WPA_GET_LE16((const u8*)(p2p_msg.group_bssid+1)));
+			atbm_printk_err("%s:group_bssid is err(%d)\n",__func__,ATBM_WPA_GET_LE16((const u8*)(p2p_msg.group_bssid+1)));
 			break;
 		}
-		printk(KERN_DEBUG "%s:group_bssid(%pM),own_addr(%pM)\n",__func__,p2p_msg.group_bssid+3,priv->vif->addr);
+		atbm_printk_p2p("%s:group_bssid(%pM),own_addr(%pM)\n",__func__,p2p_msg.group_bssid+3,priv->vif->addr);
 		if(!memcmp(p2p_msg.group_bssid+3,priv->vif->addr,6))
 			break;
 
@@ -607,7 +604,7 @@ set_oper_channel:
 		memcpy(hw_priv->go_bssid,p2p_msg.group_bssid+3,6);
 		break;
 	}
-	printk(KERN_DEBUG "%s:intended_addr(%p),action(%d),tx(%d)\n",__func__,p2p_msg.intended_addr,p2p_data[0],(int)tx);
+	atbm_printk_p2p("%s:intended_addr(%p),action(%d),tx(%d)\n",__func__,p2p_msg.intended_addr,p2p_data[0],(int)tx);
 	while(tx == false)
 	{
 		/*
@@ -618,18 +615,16 @@ set_oper_channel:
 		if(!p2p_msg.intended_addr)
 			break;
 		if(ATBM_WPA_GET_LE16((const u8*)(p2p_msg.intended_addr+1)) != 6){
-			printk(KERN_ERR "%s:intended_addr is err(%d)\n",__func__,ATBM_WPA_GET_LE16((const u8*)(p2p_msg.intended_addr+1)));
 			break;
 		}
 		
 		atomic_set(&hw_priv->go_bssid_set,1);
 		memcpy(hw_priv->go_bssid,p2p_msg.intended_addr+3,6);
-		printk(KERN_DEBUG "%s:intended_addr(%pM),own_addr(%pM)\n",__func__,p2p_msg.intended_addr+3,priv->vif->addr);
 		break;
 	}
 
 	return true;
 }
 #endif
-
+#endif
 

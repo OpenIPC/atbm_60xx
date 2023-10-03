@@ -176,7 +176,7 @@ static void __atbm_queue_gc(struct atbm_queue *queue,
 				__atbm_queue_unlock(queue);
 		} else if (item) {
 			unsigned long tmo = item->queue_timestamp + queue->ttl;
-			mod_timer(&queue->gc, tmo);
+			atbm_mod_timer(&queue->gc, tmo);
 			#ifdef CONFIG_PM
 			atbm_pm_stay_awake(&stats->hw_priv->pm_state,
 					tmo - jiffies);
@@ -263,13 +263,13 @@ static void __atbm_queue_gc(struct atbm_queue *queue,
 		} else if (item) {
 			if(item->txpriv.if_id == if_id_clear){
 				unsigned long tmo = item->queue_timestamp + queue->ttl;
-				mod_timer(&queue->gc[if_id_clear], tmo);
+				atbm_mod_timer(&queue->gc[if_id_clear], tmo);
 				#ifdef CONFIG_PM
 				atbm_pm_stay_awake(&stats->hw_priv->pm_state,
 						tmo - jiffies);
 				#endif
 			}else {				
-				printk(KERN_ERR "%s:if_id[%d],id_clear[%d],queued[%d]\n",__func__,item->txpriv.if_id,if_id_clear,queue->num_queued_vif[if_id_clear]);
+				atbm_printk_err("%s:if_id[%d],id_clear[%d],queued[%d]\n",__func__,item->txpriv.if_id,if_id_clear,queue->num_queued_vif[if_id_clear]);
 			}
 		}
 	}
@@ -332,18 +332,18 @@ int atbm_queue_init(struct atbm_queue *queue,
 	INIT_LIST_HEAD(&queue->pending);
 	INIT_LIST_HEAD(&queue->free_pool);
 	spin_lock_init(&queue->lock);
-	#ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
-	init_timer(&queue->gc);
+#ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
+	atbm_init_timer(&queue->gc);
 	queue->gc.data = (unsigned long)queue;
 	queue->gc.function = atbm_queue_gc;
-	#else
+#else
 	for(i = 0;i<ATBM_WIFI_MAX_VIFS;i++){
-		init_timer(&queue->gc[i]);
+		atbm_init_timer(&queue->gc[i]);
 		queue->timer_to_if_id[i]=i;
 		queue->gc[i].data = (unsigned long)(&queue->timer_to_if_id[i]);
 		queue->gc[i].function = atbm_queue_gc;
 	}
-	#endif
+#endif
 	queue->pool = atbm_kzalloc(sizeof(struct atbm_queue_item) * capacity,
 			GFP_KERNEL);
 	if (!queue->pool)
@@ -433,12 +433,12 @@ int atbm_queue_clear(struct atbm_queue *queue, int if_id)
 		}
 	}
 	spin_unlock_bh(&stats->lock);
-	#ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
+#ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
 	if (unlikely(queue->overfull)) {
 		queue->overfull = false;
 		__atbm_queue_unlock(queue);
 	}
-	#else
+#else
 	if(ATBM_WIFI_ALL_IFS == if_id){
 		for(i = 0;i<ATBM_WIFI_MAX_VIFS;i++)
 			if(unlikely(queue->overfull[i])){
@@ -449,7 +449,7 @@ int atbm_queue_clear(struct atbm_queue *queue, int if_id)
 		queue->overfull[if_id] = false;
 		__atbm_queue_unlock(queue,if_id);
 	}
-	#endif
+#endif
 	spin_unlock_bh(&queue->lock);
 	wake_up(&stats->wait_link_id_empty);
 	atbm_queue_post_gc(stats, &gc_list);
@@ -471,13 +471,13 @@ void atbm_queue_deinit(struct atbm_queue *queue)
 	int i;
 
 	atbm_queue_clear(queue, ATBM_WIFI_ALL_IFS);
-	#ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
-	del_timer_sync(&queue->gc);
-	#else
+#ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
+	atbm_del_timer_sync(&queue->gc);
+#else
 	for (i = 0; i < ATBM_WIFI_MAX_VIFS; i++) {
-		del_timer_sync(&queue->gc[i]);
+		atbm_del_timer_sync(&queue->gc[i]);
 	}
-	#endif
+#endif
 	INIT_LIST_HEAD(&queue->free_pool);
 	atbm_kfree(queue->pool);
 	for (i = 0; i < ATBM_WIFI_MAX_VIFS; i++) {
@@ -514,7 +514,7 @@ size_t atbm_queue_get_num_queued(struct atbm_vif *priv,
 	spin_unlock_bh(&queue->lock);
 	return ret;
 }
-
+#if 0
 #include <linux/ip.h>
 #include <linux/tcp.h>
 int atbm_tcp_ack_offload(struct atbm_queue *queue,struct atbm_txpriv *txpriv,struct sk_buff *skb_new)
@@ -554,6 +554,7 @@ int atbm_tcp_ack_offload(struct atbm_queue *queue,struct atbm_txpriv *txpriv,str
 	spin_unlock_bh(&queue->lock);
 	return 0;
 }
+#endif
 int atbm_queue_put(struct atbm_queue *queue,
 		     struct sk_buff *skb,
 		     struct atbm_txpriv *txpriv)
@@ -602,14 +603,14 @@ int atbm_queue_put(struct atbm_queue *queue,
 		 * TX may happen in parallel sometimes.
 		 * Leave extra queue slots so we don't overflow.
 		 */
-		#ifndef ATBM_WIFI_QUEUE_LOCK_BUG
+#ifndef ATBM_WIFI_QUEUE_LOCK_BUG
 		if (queue->overfull == false &&
 				queue->num_queued >= (queue->capacity - (num_present_cpus()))) {
 			queue->overfull = true;
 			__atbm_queue_lock(queue);
-			mod_timer(&queue->gc, jiffies);
+			atbm_mod_timer(&queue->gc, jiffies);
 		}
-		#else
+#else
 		{
 			#define xIF_QUEUE_OVERFLOW(__queue,_if_id,_if_cap) \
 				(__queue->num_queued_vif[_if_id] >= (_if_cap - (num_present_cpus())))
@@ -628,23 +629,27 @@ int atbm_queue_put(struct atbm_queue *queue,
 				if(xIF_QUEUE_OVERFLOW(queue,txpriv->if_id,capacity) || ALLIF_QUEUE_OVERFLOW(queue)){
 					queue->overfull[txpriv->if_id] = true;
 					__atbm_queue_lock(queue,txpriv->if_id);
-					mod_timer(&queue->gc[txpriv->if_id], jiffies);
+					atbm_mod_timer(&queue->gc[txpriv->if_id], jiffies);
 
 				}
 			}else {
+			#if 0
 				struct atbm_common	*hw_priv = queue->stats->hw_priv;
-				printk(KERN_ERR "%s queue_locked:if_id[%d],num_queued_vif[%d],queue[%d],all queued(%d),reason[%ld],lockcnt(%d)\n",
+				atbm_printk_err( "%s queue_locked:if_id[%d],num_queued_vif[%d],queue[%d],all queued(%d),reason[%ld],lockcnt(%d)\n",
 				__func__,txpriv->if_id,queue->num_queued_vif[txpriv->if_id],queue->queue_id,queue->num_queued,
 				hw_to_local(hw_priv->hw)->queue_stop_reasons[queue->queue_id + 4*txpriv->if_id],queue->tx_locked_cnt[txpriv->if_id]);
+			#endif
 			}
 		}
-		#endif
+#endif
 	} else {
 		#ifdef ATBM_WIFI_QUEUE_LOCK_BUG
+		#if 0
 		struct atbm_common	*hw_priv = queue->stats->hw_priv;
-		printk(KERN_ERR "%s free_pool:if_id[%d],num_queued_vif[%d],queue[%d],all queued(%d),reason[%ld],lockcnt(%d)\n",
+		atbm_printk_err( "%s free_pool:if_id[%d],num_queued_vif[%d],queue[%d],all queued(%d),reason[%ld],lockcnt(%d)\n",
 			__func__,txpriv->if_id,queue->num_queued_vif[txpriv->if_id],queue->queue_id,queue->num_queued,
 			hw_to_local(hw_priv->hw)->queue_stop_reasons[queue->queue_id + 4*txpriv->if_id],queue->tx_locked_cnt[txpriv->if_id]);
+		#endif
 		#endif
 		ret = -ENOENT;
 	}
@@ -697,7 +702,6 @@ int atbm_queue_get(struct atbm_queue *queue,
 		*queue_generation must be equal to queue->generation
 		*/
 		if(queue_generation != (queue->generation&0xF)){
-			printk(KERN_ERR "%s:update generation(%d)->(%d)\n",__func__,queue_generation,queue->generation);
 			item->packetID &= 0x0fffffff;//BIT(28):BIT(31)->0
 			item->packetID |= ((u32)(queue->generation&0xF))<<28;
 			BUG_ON(((item->packetID >> 28) & 0xF) != queue->generation);
@@ -759,7 +763,7 @@ int atbm_queue_requeue(struct atbm_queue *queue, u32 packetID, bool check)
 #else
 	if (check && item->txpriv.offchannel_if_id == ATBM_WIFI_GENERIC_IF_ID) {
 #endif
-		printk(KERN_DEBUG "Requeued frame dropped for "
+		atbm_printk_err("Requeued frame dropped for "
 						"generic interface id.\n");
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 		atbm_queue_remove(hw_priv, queue, packetID);
@@ -814,7 +818,7 @@ int atbm_queue_requeue(struct atbm_queue *queue, u32 packetID, bool check)
 	spin_unlock_bh(&queue->lock);
 	return ret;
 }
-
+#if 0
 int atbm_queue_requeue_all(struct atbm_queue *queue)
 {
 	struct atbm_queue_stats *stats = queue->stats;
@@ -845,6 +849,7 @@ int atbm_queue_requeue_all(struct atbm_queue *queue)
 
 	return 0;
 }
+#endif
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 int atbm_queue_remove(struct atbm_common *hw_priv,
 				struct atbm_queue *queue, u32 packetID)
@@ -940,13 +945,13 @@ int atbm_queue_remove(struct atbm_queue *queue, u32 packetID)
 		 */
 		list_move(&item->head, &queue->free_pool);
 
-		#ifndef ATBM_WIFI_QUEUE_LOCK_BUG
+#ifndef ATBM_WIFI_QUEUE_LOCK_BUG
 		if (unlikely(queue->overfull) &&
 		    (queue->num_queued <= (queue->capacity / 2))) {
 			queue->overfull = false;
 			__atbm_queue_unlock(queue);
 		}
-		#else
+#else
 		{
 			if (unlikely(queue->overfull[if_id])){
 				
@@ -964,7 +969,7 @@ int atbm_queue_remove(struct atbm_queue *queue, u32 packetID)
 				}
 			}
 		}
-		#endif
+#endif
 	}
 	spin_unlock_bh(&queue->lock);
 
@@ -1010,12 +1015,6 @@ int atbm_queue_get_skb(struct atbm_queue *queue, u32 packetID,
 		*txpriv = &item->txpriv;
 	}
 	spin_unlock_bh(&queue->lock);
-	if(ret<0){
-		printk(KERN_ERR "%s:packetID(%x),queue_generation(%d),queue_id(%d),item_generation(%d),item_id(%d),if_id(%d)\n",
-			__func__,packetID,queue_generation,queue_id,item_generation,item_id,if_id);
-		printk(KERN_ERR "%s:queue->generation(%d),queue->queue_id(%d),item->generation(%d),queue->capacity(%d)\n",__func__,
-			queue->generation,queue->queue_id,item->generation,queue->capacity);
-	}
 	return ret;
 }
 #ifndef ATBM_WIFI_QUEUE_LOCK_BUG
@@ -1098,9 +1097,10 @@ bool atbm_queue_stats_is_empty(struct atbm_queue_stats *stats,
 	return empty;
 }
 
-
+#if 0
 unsigned long  atbm_queue_ttl(struct atbm_queue *queue){
 	struct atbm_queue_item *item = list_first_entry(
 				&queue->queue, struct atbm_queue_item, head);
 	return (jiffies - item->queue_timestamp)*(1000/HZ);
 }
+#endif

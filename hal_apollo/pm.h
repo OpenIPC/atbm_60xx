@@ -15,7 +15,7 @@
 
 #ifndef PM_H_INCLUDED
 #define PM_H_INCLUDED
-
+#include <linux/platform_device.h>
 #ifdef CONFIG_WAKELOCK
 #include <linux/wakelock.h>
 #endif
@@ -28,6 +28,7 @@
 /* extern */  struct atbm_common;
 /* private */ struct atbm_suspend_state;
 struct atbm_pm_stayawake_lock{
+	struct atbm_common *hw_priv;
 	int stayawak_cnt;
 	spinlock_t stayawak_spinlock;
 	#ifdef CONFIG_WAKELOCK
@@ -35,10 +36,11 @@ struct atbm_pm_stayawake_lock{
 	#endif
 };
 struct atbm_pm_state {
+	struct platform_driver pm_driver;
 #ifdef CONFIG_WAKELOCK
 	struct wake_lock wakelock;
 #else
-	struct timer_list stay_awake;
+	struct atbm_timer_list stay_awake;
 #endif
 	struct platform_device *pm_dev;
 	spinlock_t lock;

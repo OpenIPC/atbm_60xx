@@ -20,20 +20,22 @@ __ieee80211_get_channel_mode(struct ieee80211_local *local,
 		if (!ieee80211_sdata_running(sdata))
 			continue;
 
-		if (sdata->vif.type == NL80211_IFTYPE_MONITOR)
-			continue;
-
+		if (sdata->vif.type == NL80211_IFTYPE_MONITOR){
+			if(local->monitors == 0)
+				continue;
+			return CHAN_MODE_HOPPING;
+		}
 		if (sdata->vif.type == NL80211_IFTYPE_STATION &&
 		    !sdata->u.mgd.associated)
 			continue;
-
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
 		if (sdata->vif.type == NL80211_IFTYPE_ADHOC) {
 			if (!sdata->u.ibss.ssid_len)
 				continue;
 			if (!sdata->u.ibss.fixed_channel)
 				return CHAN_MODE_HOPPING;
 		}
-
+#endif
 		if (sdata->vif.type == NL80211_IFTYPE_AP &&
 		    !sdata->u.ap.beacon)
 			continue;
@@ -67,7 +69,7 @@ bool ieee80211_set_channel_type(struct ieee80211_local *local,
 	bool result;
 
 	mutex_lock(&local->iflist_mtx);
-
+#ifdef CONFIG_ATBM_SUPPORT_MULTI_CHANNEL
 	if (local->hw.flags & IEEE80211_HW_SUPPORTS_MULTI_CHANNEL) {
 		/* XXX: COMBO: TBD - is this ok? */
 		BUG_ON(!sdata);
@@ -76,7 +78,7 @@ bool ieee80211_set_channel_type(struct ieee80211_local *local,
 		result = true;
 		goto out;
 	}
-
+#endif
 	chan_state = ieee80211_get_channel_state(local, sdata);
 
 	list_for_each_entry(tmp, &local->interfaces, list) {

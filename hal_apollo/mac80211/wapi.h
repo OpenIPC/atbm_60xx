@@ -10,6 +10,7 @@
 
 #ifndef WAPI_H
 #define WAPI_H
+#ifdef CONFIG_ATBM_USE_SW_ENC
 
 #include <linux/skbuff.h>
 #include <linux/types.h>
@@ -23,5 +24,5 @@
 
 ieee80211_rx_result
 ieee80211_crypto_wapi_decrypt(struct ieee80211_rx_data *rx);
-
+#endif
 #endif /* WAPI_H */

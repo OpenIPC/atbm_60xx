@@ -14,7 +14,7 @@
 #include "mesh.h"
 
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_MPL_DEBUG
-#define mpl_dbg(fmt, args...)	printk(KERN_DEBUG fmt, ##args)
+#define mpl_dbg(fmt, args...)	atbm_printk_always(fmt, ##args)
 #else
 #define mpl_dbg(fmt, args...)	do { (void)(0); } while (0)
 #endif
@@ -22,7 +22,7 @@
 #define PLINK_GET_LLID(p) (p + 2)
 #define PLINK_GET_PLID(p) (p + 4)
 
-#define mod_plink_timer(s, t) (mod_timer(&s->plink_timer, \
+#define mod_plink_timer(s, t) (atbm_mod_timer(&s->plink_timer, \
 				jiffies + HZ * t / 1000))
 
 #define dot11MeshMaxRetries(s) (s->u.mesh.mshcfg.dot11MeshMaxRetries)
@@ -97,8 +97,9 @@ static struct sta_info *mesh_plink_alloc(struct ieee80211_sub_if_data *sdata,
 	set_sta_flag(sta, WLAN_STA_AUTHORIZED);
 	set_sta_flag(sta, WLAN_STA_WME);
 	sta->sta.supp_rates[chan_state->conf.channel->band] = rates;
+#ifndef CONFIG_RATE_HW_CONTROL
 	rate_control_rate_init(sta);
-
+#endif
 	return sta;
 }
 
@@ -176,7 +177,7 @@ static int mesh_plink_frame_tx(struct ieee80211_sub_if_data *sdata,
 	memcpy(mgmt->da, da, ETH_ALEN);
 	memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
 	memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
-	mgmt->u.action.category = WLAN_CATEGORY_SELF_PROTECTED;
+	mgmt->u.action.category = ATBM_WLAN_CATEGORY_SELF_PROTECTED;
 	mgmt->u.action.u.self_prot.action_code = action;
 
 	if (action != WLAN_SP_MESH_PEERING_CLOSE) {
@@ -347,7 +348,7 @@ static void mesh_plink_timer(unsigned long data)
 		break;
 	case NL80211_PLINK_HOLDING:
 		/* holding timer */
-		del_timer(&sta->plink_timer);
+		atbm_del_timer(&sta->plink_timer);
 		mesh_plink_fsm_restart(sta);
 		spin_unlock_bh(&sta->lock);
 		break;
@@ -360,14 +361,14 @@ static void mesh_plink_timer(unsigned long data)
 #ifdef CONFIG_PM
 void mesh_plink_quiesce(struct sta_info *sta)
 {
-	if (del_timer_sync(&sta->plink_timer))
+	if (atbm_del_timer_sync(&sta->plink_timer))
 		sta->plink_timer_was_running = true;
 }
 
 void mesh_plink_restart(struct sta_info *sta)
 {
 	if (sta->plink_timer_was_running) {
-		add_timer(&sta->plink_timer);
+		atbm_add_timer(&sta->plink_timer);
 		sta->plink_timer_was_running = false;
 	}
 }
@@ -379,7 +380,7 @@ static inline void mesh_plink_timer_set(struct sta_info *sta, int timeout)
 	sta->plink_timer.data = (unsigned long) sta;
 	sta->plink_timer.function = mesh_plink_timer;
 	sta->plink_timeout = timeout;
-	add_timer(&sta->plink_timer);
+	atbm_add_timer(&sta->plink_timer);
 }
 
 int mesh_plink_open(struct sta_info *sta)
@@ -715,7 +716,7 @@ void mesh_rx_plink_frame(struct ieee80211_sub_if_data *sdata, struct atbm_ieee80
 					    sta->sta.addr, llid, plid, 0);
 			break;
 		case CNF_ACPT:
-			del_timer(&sta->plink_timer);
+			atbm_del_timer(&sta->plink_timer);
 			sta->plink_state = NL80211_PLINK_ESTAB;
 			spin_unlock_bh(&sta->lock);
 			mesh_plink_inc_estab_count(sdata);
@@ -750,7 +751,7 @@ void mesh_rx_plink_frame(struct ieee80211_sub_if_data *sdata, struct atbm_ieee80
 					    sta->sta.addr, llid, plid, reason);
 			break;
 		case OPN_ACPT:
-			del_timer(&sta->plink_timer);
+			atbm_del_timer(&sta->plink_timer);
 			sta->plink_state = NL80211_PLINK_ESTAB;
 			spin_unlock_bh(&sta->lock);
 			mesh_plink_inc_estab_count(sdata);
@@ -797,7 +798,7 @@ void mesh_rx_plink_frame(struct ieee80211_sub_if_data *sdata, struct atbm_ieee80
 	case NL80211_PLINK_HOLDING:
 		switch (event) {
 		case CLS_ACPT:
-			if (del_timer(&sta->plink_timer))
+			if (atbm_del_timer(&sta->plink_timer))
 				sta->ignore_plink_timer = 1;
 			mesh_plink_fsm_restart(sta);
 			spin_unlock_bh(&sta->lock);

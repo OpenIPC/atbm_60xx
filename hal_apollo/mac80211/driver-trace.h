@@ -242,7 +242,9 @@ TRACE_EVENT(drv_config,
 		__field(u8, short_frame_max_tx_count)
 		__field(int, center_freq)
 		__field(int, channel_type)
+#ifdef CONFIG_ATBM_SMPS
 		__field(int, smps)
+#endif
 	),
 
 	TP_fast_assign(
@@ -252,9 +254,11 @@ TRACE_EVENT(drv_config,
 		__entry->power_level = local->hw.conf.power_level;
 		__entry->long_frame_max_tx_count = local->hw.conf.long_frame_max_tx_count;
 		__entry->short_frame_max_tx_count = local->hw.conf.short_frame_max_tx_count;
-		__entry->center_freq = local->chan_state.conf.channel->center_freq;
+		__entry->center_freq = channel_center_freq(local->chan_state.conf.channel);
 		__entry->channel_type = local->chan_state.conf.channel_type;
+#ifdef CONFIG_ATBM_SMPS
 		__entry->smps = local->hw.conf.smps_mode;
+#endif
 	),
 
 	TP_printk(
@@ -903,7 +907,7 @@ TRACE_EVENT(drv_channel_switch,
 		LOCAL_ASSIGN;
 		__entry->timestamp = ch_switch->timestamp;
 		__entry->block_tx = ch_switch->block_tx;
-		__entry->freq = ch_switch->channel->center_freq;
+		__entry->freq = channel_center_freq(ch_switch->channel);
 		__entry->count = ch_switch->count;
 	),
 
@@ -978,7 +982,7 @@ TRACE_EVENT(drv_remain_on_channel,
 
 	TP_fast_assign(
 		LOCAL_ASSIGN;
-		__entry->center_freq = chan->center_freq;
+		__entry->center_freq = channel_center_freq(chan);
 		__entry->channel_type = chantype;
 		__entry->duration = duration;
 	),
@@ -1011,7 +1015,7 @@ TRACE_EVENT(drv_offchannel_tx,
 
 	TP_fast_assign(
 		LOCAL_ASSIGN;
-		__entry->center_freq = chan->center_freq;
+		__entry->center_freq = channel_center_freq(chan);
 		__entry->channel_type = channel_type;
 		__entry->wait = wait;
 	),

@@ -1,6 +1,6 @@
 #ifndef _IEEE80211_ATBM_MEM_H_
 #define _IEEE80211_ATBM_MEM_H_
-#if (ATBM_ALLOC_MEM_DEBUG == 1)
+#if defined (ATBM_ALLOC_MEM_DEBUG)
 extern void *ieee80211_atbm_kzalloc(size_t s, gfp_t gfp,const char *func);
 extern void *ieee80211_atbm_kmalloc(size_t s, gfp_t gfp,const char *func);
 extern void *ieee80211_atbm_kcalloc(size_t n, size_t size, gfp_t gfp,const char *func);

@@ -1,6 +1,6 @@
 #ifndef _IEEE80211_ATBM_SKB_H_
 #define _IEEE80211_ATBM_SKB_H_
-#if (ATBM_ALLOC_SKB_DEBUG==1)
+#if defined (ATBM_ALLOC_SKB_DEBUG)
 extern void ieee80211_atbm_add_skb_to_debug_list(struct sk_buff *skb,const char *func);
 
 extern void ieee80211_atbm_skb_exit(void);
@@ -95,18 +95,7 @@ extern void ieee80211_atbm_skb_orphan(struct sk_buff *skb,const char *func);
 #define RX_DEBUG_FLAG_WORK   BIT(12)
 #define RX_DEBUG_FLAG_ADDWORK   BIT(13)
 
-struct ieee80211_atbm_skb_hdr
-{
-	struct list_head head;
-	const char *call_addr;
-	long masker;
-	u32 flags;
-	u32 generation;
-	u32 truesize;
-	u8 mem[0] __attribute__((__aligned__(64)));
-};
-
-#define IEEE80211_ATBM_SKB_HEAD_SIZE sizeof(struct ieee80211_atbm_skb_hdr)
+#define IEEE80211_ATBM_SKB_HEAD_SIZE 0
 #define __atbm_dev_alloc_skb(_length,_gfp_mask) 				__ieee80211_atbm_dev_alloc_skb(_length,_gfp_mask,__func__)																														
 #define atbm_dev_alloc_skb(_length)								ieee80211_atbm_dev_alloc_skb(_length,__func__)              																														    
 #define atbm_alloc_skb(_size,_priority) 						ieee80211_atbm_alloc_skb(_size,_priority,__func__)      																														

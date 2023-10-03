@@ -10,8 +10,8 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef MAC80211_H
-#define MAC80211_H
+#ifndef ATBM_MAC80211_H
+#define ATBM_MAC80211_H
 
 #include <linux/kernel.h>
 #include <linux/if_ether.h>
@@ -20,7 +20,22 @@
 #include <linux/ieee80211.h>
 #include <net/cfg80211.h>
 #include <asm/unaligned.h>
+#include <linux/hash.h>
+#include <linux/module.h>
+#include <net/ieee80211_radiotap.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 
+#ifdef CONFIG_ATBM_SELF_WORKQUEUE
+struct atbm_work_struct;
+struct atbm_delayed_work;
+struct atbm_workqueue_struct;
+#else
+#define atbm_workqueue_struct			workqueue_struct
+#define atbm_delayed_work 				delayed_work
+#define atbm_work_struct  				work_struct
+#endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 #define IEEE80211_BAND_2GHZ NL80211_BAND_2GHZ
 #define IEEE80211_BAND_5GHZ NL80211_BAND_5GHZ
@@ -76,12 +91,10 @@ do {			\
 #endif
 int atbm_ieee80211_init(void);
 void atbm_ieee80211_exit(void);
-void ieee80211_module_init(void);
-void ieee80211_module_exit(void);
 
 extern int cfg80211_altmtest_reply(struct wiphy *wiphy,
 				const void *data, int len);
-#define DBUG_AUTHEN(fc)		if(ieee80211_is_auth(fc)) printk("%s:%d,fc(%x)\n",__func__,__LINE__,fc);
+#define DBUG_AUTHEN(fc)		if(ieee80211_is_auth(fc)) atbm_printk_mgmt("%s:%d,fc(%x)\n",__func__,__LINE__,fc);
 static inline unsigned atbm_compare_ether_addr(const u8 *addr1, const u8 *addr2)
 {
 	const u16 *a = (const u16 *) addr1;
@@ -188,9 +201,32 @@ enum atbm_ieee80211_eid {
 	ATBM_WLAN_EID_SUPPORTED_REGULATORY_CLASSES = 59,
 	ATBM_WLAN_EID_EXT_CHANSWITCH_ANN = 60,
 	ATBM_WLAN_EID_SECONDARY_CH_OFFSET = 62,
-#ifdef ATBM_PRIVATE_IE
 	ATBM_WLAN_EID_PRIVATE = 233,
-#endif
+};
+/* Action category code */
+enum atbm_ieee80211_category {
+	ATBM_WLAN_CATEGORY_SPECTRUM_MGMT = 0,
+	ATBM_WLAN_CATEGORY_QOS = 1,
+	ATBM_WLAN_CATEGORY_DLS = 2,
+	ATBM_WLAN_CATEGORY_BACK = 3,
+	ATBM_WLAN_CATEGORY_PUBLIC = 4,
+	ATBM_WLAN_CATEGORY_RADIO_MEASUREMENT = 5,
+	ATBM_WLAN_CATEGORY_HT = 7,
+	ATBM_WLAN_CATEGORY_SA_QUERY = 8,
+	ATBM_WLAN_CATEGORY_PROTECTED_DUAL_OF_ACTION = 9,
+	ATBM_WLAN_CATEGORY_WNM = 10,
+	ATBM_WLAN_CATEGORY_WNM_UNPROTECTED = 11,
+	ATBM_WLAN_CATEGORY_TDLS = 12,
+	ATBM_WLAN_CATEGORY_MESH_ACTION = 13,
+	ATBM_WLAN_CATEGORY_MULTIHOP_ACTION = 14,
+	ATBM_WLAN_CATEGORY_SELF_PROTECTED = 15,
+	ATBM_WLAN_CATEGORY_DMG = 16,
+	ATBM_WLAN_CATEGORY_WMM = 17,
+	ATBM_WLAN_CATEGORY_FST = 18,
+	ATBM_WLAN_CATEGORY_UNPROT_DMG = 20,
+	ATBM_WLAN_CATEGORY_VHT = 21,
+	ATBM_WLAN_CATEGORY_VENDOR_SPECIFIC_PROTECTED = 126,
+	ATBM_WLAN_CATEGORY_VENDOR_SPECIFIC = 127,
 };
 
 struct atbm_wpa_ie_data {
@@ -349,6 +385,11 @@ static inline u16 ATBM_WPA_GET_LE16(const u8 *a)
 #define ATBM_WPA_CIPHER_SUITE_TKIP 					0x0050f202
 #define ATBM_WPA_CIPHER_SUITE_CCMP 					0x0050f204
 #define ATBM_WPA_CIPHER_SUITE_WEP104 				0x0050f205
+
+#define ATBM_PRIVATE_OUI							0x4154424D
+
+#define ATBM_MICHAEL_MIC_LEN 8
+
 enum atbm_p2p_attr_id {
 	ATBM_P2P_ATTR_STATUS = 0,
 	ATBM_P2P_ATTR_MINOR_REASON_CODE = 1,
@@ -694,7 +735,7 @@ static inline bool ieee80211_is_public_action(struct ieee80211_hdr *hdr,
 		return false;
 	if (!ieee80211_is_action(hdr->frame_control))
 		return false;
-	return mgmt->u.action.category == WLAN_CATEGORY_PUBLIC;
+	return mgmt->u.action.category == ATBM_WLAN_CATEGORY_PUBLIC;
 }
 #endif
 
@@ -1345,7 +1386,8 @@ struct ieee80211_tx_info {
 
 	u8 hw_queue;
 	/* 2 byte hole */
-	u8 pad[1];
+	//u8 pad[1];
+	u8 sg_tailneed;
 
 	union {
 		struct {
@@ -1406,7 +1448,7 @@ static inline struct ieee80211_rx_status *IEEE80211_SKB_RXCB(struct sk_buff *skb
 {
 	return (struct ieee80211_rx_status *)skb->cb;
 }
-
+#if 0
 /**
  * ieee80211_tx_info_clear_status - clear TX status
  *
@@ -1442,7 +1484,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
 	       offsetof(struct ieee80211_tx_info, status.ampdu_ack_len));
 }
 
-
+#endif
 /**
  * enum mac80211_rx_flags - receive flags
  *
@@ -1481,6 +1523,9 @@ enum mac80211_rx_flags {
 	RX_FLAG_40MHZ		= 1<<10,
 	RX_FLAG_SHORT_GI	= 1<<11,
 	RX_FLAG_HW_CHKSUM_ERROR = 1<<12,
+	RX_FLAG_STA_LISTEN  = 1<<13,
+	RX_FLAG_UNKOWN_STA_FRAME = 1<<14,
+	RX_FLAG_AMPDU =	1<<15,
 };
 
 /**
@@ -1969,6 +2014,8 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_P2P_PS			= 1<<26,
 	IEEE80211_HW_SUPPORTS_MULTI_CHANNEL		= 1<<27,
 	IEEE80211_HW_QUEUE_CONTROL			= 1<<28,
+	IEEE80211_HW_MONITOR_NEED_PRISM_HEADER		= 1<<29,
+	IEEE80211_HW_SCHEDULE_TASKLET		= 1<<30,
 };
 
 /**
@@ -2067,7 +2114,25 @@ struct ieee80211_hw {
 	u8 vendcmd_nl80211;
 	struct response vendreturn;
 };
-
+#define IEEE80211_ATBM_MAX_SCAN_CHANNEL_INDEX		64
+enum ieee80211_scan_req_wrap_flags{
+	IEEE80211_SCAN_REQ_CCA             = 1<<0,
+	IEEE80211_SCAN_REQ_INTERNAL        = 1<<1, 
+	IEEE80211_SCAN_REQ_RESULTS_HANDLE  = 1<<2, 
+	IEEE80211_SCAN_REQ_PASSIVE_SCAN    = 1<<3,
+	IEEE80211_SCAN_REQ_RESULTS_SKB     = 1<<4,
+	IEEE80211_SCAN_REQ_SPILT	   	   = 1<<5,
+	IEEE80211_SCAN_REQ_NEED_BSSID      = 1<<6,
+	IEEE80211_SCAN_REQ_ONLY_PROB       = 1<<7,
+	IEEE80211_SCAN_REQ_NEED_LISTEN	   = 1<<8,
+};
+struct ieee80211_scan_req_wrap{
+	struct cfg80211_scan_request *req;
+	u8 bssid[8];
+	u32 flags;
+	u8  cca_val[IEEE80211_ATBM_MAX_SCAN_CHANNEL_INDEX];
+};
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 /**
  * wiphy_to_ieee80211_hw - return a mac80211 driver hw struct from a wiphy
  *
@@ -2080,7 +2145,7 @@ struct ieee80211_hw {
  * is already used internally by mac80211.
  */
 struct ieee80211_hw *wiphy_to_ieee80211_hw(struct wiphy *wiphy);
-
+#endif
 /**
  * SET_IEEE80211_DEV - set device for 802.11 hardware
  *
@@ -2102,7 +2167,7 @@ static inline void SET_IEEE80211_PERM_ADDR(struct ieee80211_hw *hw, u8 *addr)
 {
 	memcpy(hw->wiphy->perm_addr, addr, ETH_ALEN);
 }
-
+#if 0
 static inline struct ieee80211_rate *
 ieee80211_get_tx_rate(const struct ieee80211_hw *hw,
 		      const struct ieee80211_tx_info *c)
@@ -2129,7 +2194,7 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
 		return NULL;
 	return &hw->wiphy->bands[c->band]->bitrates[c->control.rates[idx + 1].idx];
 }
-
+#endif
 /**
  * DOC: Hardware crypto acceleration
  *
@@ -2614,7 +2679,28 @@ enum ieee80211_frame_release_type {
 	IEEE80211_FRAME_RELEASE_PSPOLL,
 	IEEE80211_FRAME_RELEASE_UAPSD,
 };
-
+#ifdef CONFIG_IEEE80211_SPECIAL_FILTER
+#define IEEE80211_MAX_FILTERS		(16)
+struct ieee80211_special_filter{
+	u8   filter_action;
+	u8   oui[3];
+	u32  flags; 
+};
+enum ieee80211_special_filter_flags{
+	SPECIAL_F_FLAGS_FRAME_TYPE = BIT(0),
+	SPECIAL_F_FLAGS_FRAME_OUI  = BIT(1),
+	SPECIAL_F_FLAGS_FRAME_IE   = BIT(2),
+};
+struct ieee80211_special_filter_list{
+	struct list_head list;
+	struct ieee80211_special_filter filter;
+};
+struct ieee80211_special_filter_table{
+	u32 n_filters;
+	struct ieee80211_special_filter table[IEEE80211_MAX_FILTERS];
+};
+#define IEEE80211_SPECIAL_FILTER_MASK	(SPECIAL_F_FLAGS_FRAME_TYPE | SPECIAL_F_FLAGS_FRAME_OUI | SPECIAL_F_FLAGS_FRAME_IE)
+#endif
 /**
  * struct ieee80211_ops - callbacks from mac80211 to the driver
  *
@@ -3024,7 +3110,7 @@ struct ieee80211_ops {
 			       struct cfg80211_gtk_rekey_data *data);
 #endif
 	int (*hw_scan)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		       struct cfg80211_scan_request *req);
+		       struct ieee80211_scan_req_wrap *req);
 	void (*cancel_hw_scan)(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif);
 	int (*sched_scan_start)(struct ieee80211_hw *hw,
@@ -3065,7 +3151,7 @@ struct ieee80211_ops {
 		struct survey_info *survey);
 	void (*rfkill_poll)(struct ieee80211_hw *hw);
 	void (*set_coverage_class)(struct ieee80211_hw *hw, u8 coverage_class);
-#ifdef CONFIG_NL80211_TESTMODE
+#if defined (CONFIG_NL80211_TESTMODE) && defined (CONFIG_ATBM_TEST_TOOL)
 	int (*testmode_cmd)(struct ieee80211_hw *hw, void *data, int len);
 	int (*testmode_dump)(struct ieee80211_hw *hw, struct sk_buff *skb,
 			     struct netlink_callback *cb,
@@ -3114,6 +3200,12 @@ struct ieee80211_ops {
 				void *data,
 				int len);
 	int (*set_mac_addr2efuse)(struct ieee80211_hw *hw, u8 *macAddr);
+	int (*sta_triger_listen)(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_channel *chan);
+	int (*sta_stop_listen)(struct ieee80211_hw *hw,struct ieee80211_vif *vif);
+#ifdef CONFIG_IEEE80211_SPECIAL_FILTER
+	int (*set_frame_filter)(struct ieee80211_hw *hw,struct ieee80211_vif *vif,u32 n_filters,
+				struct ieee80211_special_filter *filter_table,bool enable);
+#endif	
 };
 
 /**
@@ -3309,7 +3401,9 @@ void ieee80211_free_hw(struct ieee80211_hw *hw);
  *
  * @hw: the hardware to restart
  */
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 void ieee80211_restart_hw(struct ieee80211_hw *hw);
+#endif
 int  ieee80211_restart_hw_sync(struct ieee80211_hw *hw);
 int  ieee80211_pre_restart_hw_sync(struct ieee80211_hw *hw);
 
@@ -3514,9 +3608,11 @@ static inline void ieee80211_tx_status_ni(struct ieee80211_hw *hw,
  * @hw: the hardware the frame was transmitted by
  * @skb: the frame that was transmitted, owned by mac80211 after this call
  */
+ #if 0
 void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
 				 struct sk_buff *skb);
-
+ #endif
+#if defined (CONFIG_ATBM_MAC80211_NO_USE)
 /**
  * ieee80211_report_low_ack - report non-responding station
  *
@@ -3528,7 +3624,7 @@ void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
  */
 void ieee80211_report_low_ack(struct ieee80211_sta *sta, u32 num_packets);
 char * ieee80211_vif_name_get(struct ieee80211_vif * vif);
-
+#endif
 /**
  * ieee80211_beacon_get_tim - beacon generation function
  * @hw: pointer obtained from ieee80211_alloc_hw().
@@ -3579,6 +3675,7 @@ static inline struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 struct sk_buff *ieee80211_proberesp_get(struct ieee80211_hw *hw,
 						   struct ieee80211_vif *vif);
 #endif
+#if defined (CONFIG_ATBM_MAC80211_NO_USE) || defined (CONFIG_ATBM_BT_COMB)
 
 /**
  * ieee80211_pspoll_get - retrieve a PS Poll template
@@ -3609,6 +3706,7 @@ struct sk_buff *ieee80211_pspoll_get(struct ieee80211_hw *hw,
  */
 struct sk_buff *ieee80211_nullfunc_get(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif);
+#endif
 
 /**
  * ieee80211_qosnullfunc_get - retrieve a qos nullfunc template
@@ -3641,8 +3739,8 @@ struct sk_buff *ieee80211_qosnullfunc_get(struct ieee80211_hw *hw,
 struct sk_buff *ieee80211_probereq_get(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       const u8 *ssid, size_t ssid_len,
-				       const u8 *ie, size_t ie_len);
-
+				       const u8 *ie, size_t ie_len,u8 *bssid);
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 /**
  * ieee80211_rts_get - RTS frame generation function
  * @hw: pointer obtained from ieee80211_alloc_hw().
@@ -3661,22 +3759,6 @@ void ieee80211_rts_get(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		       const void *frame, size_t frame_len,
 		       const struct ieee80211_tx_info *frame_txctl,
 		       struct ieee80211_rts *rts);
-
-/**
- * ieee80211_rts_duration - Get the duration field for an RTS frame
- * @hw: pointer obtained from ieee80211_alloc_hw().
- * @vif: &struct ieee80211_vif pointer from the add_interface callback.
- * @frame_len: the length of the frame that is going to be protected by the RTS.
- * @frame_txctl: &struct ieee80211_tx_info of the frame.
- *
- * If the RTS is generated in firmware, but the host system must provide
- * the duration field, the low-level driver uses this function to receive
- * the duration field value in little-endian byteorder.
- */
-__le16 ieee80211_rts_duration(struct ieee80211_hw *hw,
-			      struct ieee80211_vif *vif, size_t frame_len,
-			      const struct ieee80211_tx_info *frame_txctl);
-
 /**
  * ieee80211_ctstoself_get - CTS-to-self frame generation function
  * @hw: pointer obtained from ieee80211_alloc_hw().
@@ -3697,6 +3779,20 @@ void ieee80211_ctstoself_get(struct ieee80211_hw *hw,
 			     const struct ieee80211_tx_info *frame_txctl,
 			     struct ieee80211_cts *cts);
 
+/**
+ * ieee80211_rts_duration - Get the duration field for an RTS frame
+ * @hw: pointer obtained from ieee80211_alloc_hw().
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ * @frame_len: the length of the frame that is going to be protected by the RTS.
+ * @frame_txctl: &struct ieee80211_tx_info of the frame.
+ *
+ * If the RTS is generated in firmware, but the host system must provide
+ * the duration field, the low-level driver uses this function to receive
+ * the duration field value in little-endian byteorder.
+ */
+__le16 ieee80211_rts_duration(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif, size_t frame_len,
+			      const struct ieee80211_tx_info *frame_txctl);
 /**
  * ieee80211_ctstoself_duration - Get the duration field for a CTS-to-self frame
  * @hw: pointer obtained from ieee80211_alloc_hw().
@@ -3728,7 +3824,7 @@ __le16 ieee80211_generic_frame_duration(struct ieee80211_hw *hw,
 					enum ieee80211_band band,
 					size_t frame_len,
 					struct ieee80211_rate *rate);
-
+#endif
 /**
  * ieee80211_get_buffered_bc - accessing buffered broadcast and multicast frames
  * @hw: pointer as obtained from ieee80211_alloc_hw().
@@ -3752,6 +3848,7 @@ __le16 ieee80211_generic_frame_duration(struct ieee80211_hw *hw,
 struct sk_buff *
 ieee80211_get_buffered_bc(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
 
+#ifdef CONFIG_ATBM_USE_SW_ENC
 /**
  * ieee80211_get_tkip_p1k_iv - get a TKIP phase 1 key for IV32
  *
@@ -3812,7 +3909,7 @@ void ieee80211_get_tkip_rx_p1k(struct ieee80211_key_conf *keyconf,
  */
 void ieee80211_get_tkip_p2k(struct ieee80211_key_conf *keyconf,
 			    struct sk_buff *skb, u8 *p2k);
-
+#endif
 /**
  * struct ieee80211_key_seq - key sequence counter
  *
@@ -3836,7 +3933,7 @@ struct ieee80211_key_seq {
 		} aes_cmac;
 	};
 };
-
+#ifdef CONFIG_ATBM_USE_SW_ENC
 /**
  * ieee80211_get_key_tx_seq - get key TX sequence counter
  *
@@ -3872,7 +3969,6 @@ void ieee80211_get_key_tx_seq(struct ieee80211_key_conf *keyconf,
  */
 void ieee80211_get_key_rx_seq(struct ieee80211_key_conf *keyconf,
 			      int tid, struct ieee80211_key_seq *seq);
-
 /**
  * ieee80211_gtk_rekey_notify - notify userspace supplicant of rekeying
  * @vif: virtual interface the rekeying was done on
@@ -3884,7 +3980,7 @@ void ieee80211_get_key_rx_seq(struct ieee80211_key_conf *keyconf,
 void ieee80211_gtk_rekey_notify(struct ieee80211_vif *vif, const u8 *bssid,
 				const u8 *replay_ctr, gfp_t gfp);
  #endif
-
+#endif
 /**
  * ieee80211_wake_queue - wake specific queue
  * @hw: pointer as obtained from ieee80211_alloc_hw().
@@ -3941,7 +4037,7 @@ void ieee80211_wake_queues(struct ieee80211_hw *hw);
  * @aborted: set to true if scan was aborted
  */
 void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted);
-
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN
 /**
  * ieee80211_sched_scan_results - got results from scheduled scan
  *
@@ -3963,7 +4059,8 @@ void ieee80211_sched_scan_results(struct ieee80211_hw *hw);
  * @hw: the hardware that is performing scheduled scans
  */
 void ieee80211_sched_scan_stopped(struct ieee80211_hw *hw);
-
+#endif
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 /**
  * ieee80211_iterate_active_interfaces - iterate active interfaces
  *
@@ -3982,6 +4079,7 @@ void ieee80211_iterate_active_interfaces(struct ieee80211_hw *hw,
 					 void (*iterator)(void *data, u8 *mac,
 						struct ieee80211_vif *vif),
 					 void *data);
+#endif
 
 /**
  * ieee80211_iterate_active_interfaces_atomic - iterate active interfaces
@@ -4011,7 +4109,7 @@ void ieee80211_iterate_active_interfaces_atomic(struct ieee80211_hw *hw,
  * @hw: the hardware struct for the interface we are adding work for
  * @work: the work we want to add onto the mac80211 workqueue
  */
-void ieee80211_queue_work(struct ieee80211_hw *hw, struct work_struct *work);
+void ieee80211_queue_work(struct ieee80211_hw *hw, struct atbm_work_struct *work);
 
 /**
  * ieee80211_queue_delayed_work - add work onto the mac80211 workqueue
@@ -4024,8 +4122,9 @@ void ieee80211_queue_work(struct ieee80211_hw *hw, struct work_struct *work);
  * @delay: number of jiffies to wait before queueing
  */
 void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
-				  struct delayed_work *dwork,
+				  struct atbm_delayed_work *dwork,
 				  unsigned long delay);
+#ifdef CONFIG_ATBM_SW_AGGTX
 
 /**
  * ieee80211_start_tx_ba_session - Start a tx Block Ack session.
@@ -4080,7 +4179,7 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_sta *sta, u16 tid);
  */
 void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif, const u8 *ra,
 				     u16 tid);
-
+#endif
 /**
  * ieee80211_find_sta - find a station
  *
@@ -4092,80 +4191,6 @@ void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif, const u8 *ra,
  */
 struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
 					 const u8 *addr);
-
-/**
- * ieee80211_find_sta_by_ifaddr - find a station on hardware
- *
- * @hw: pointer as obtained from ieee80211_alloc_hw()
- * @addr: remote station's address
- * @localaddr: local address (vif->sdata->vif.addr). Use NULL for 'any'.
- *
- * This function must be called under RCU lock and the
- * resulting pointer is only valid under RCU lock as well.
- *
- * NOTE: You may pass NULL for localaddr, but then you will just get
- *      the first STA that matches the remote address 'addr'.
- *      We can have multiple STA associated with multiple
- *      logical stations (e.g. consider a station connecting to another
- *      BSSID on the same AP hardware without disconnecting first).
- *      In this case, the result of this method with localaddr NULL
- *      is not reliable.
- *
- * DO NOT USE THIS FUNCTION with localaddr NULL if at all possible.
- */
-struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
-					       const u8 *addr,
-					       const u8 *localaddr);
-
-/**
- * ieee80211_sta_block_awake - block station from waking up
- * @hw: the hardware
- * @pubsta: the station
- * @block: whether to block or unblock
- *
- * Some devices require that all frames that are on the queues
- * for a specific station that went to sleep are flushed before
- * a poll response or frames after the station woke up can be
- * delivered to that it. Note that such frames must be rejected
- * by the driver as filtered, with the appropriate status flag.
- *
- * This function allows implementing this mode in a race-free
- * manner.
- *
- * To do this, a driver must keep track of the number of frames
- * still enqueued for a specific station. If this number is not
- * zero when the station goes to sleep, the driver must call
- * this function to force mac80211 to consider the station to
- * be asleep regardless of the station's actual state. Once the
- * number of outstanding frames reaches zero, the driver must
- * call this function again to unblock the station. That will
- * cause mac80211 to be able to send ps-poll responses, and if
- * the station queried in the meantime then frames will also
- * be sent out as a result of this. Additionally, the driver
- * will be notified that the station woke up some time after
- * it is unblocked, regardless of whether the station actually
- * woke up while blocked or not.
- */
-void ieee80211_sta_block_awake(struct ieee80211_hw *hw,
-			       struct ieee80211_sta *pubsta, bool block);
-
-/**
- * ieee80211_sta_eosp - notify mac80211 about end of SP
- * @pubsta: the station
- *
- * When a device transmits frames in a way that it can't tell
- * mac80211 in the TX status about the EOSP, it must clear the
- * %IEEE80211_TX_STATUS_EOSP bit and call this function instead.
- * This applies for PS-Poll as well as uAPSD.
- *
- * Note that there is no non-_irqsafe version right now as
- * it wasn't needed, but just like _tx_status() and _rx()
- * must not be mixed in irqsafe/non-irqsafe versions, this
- * function must not be mixed with those either. Use the
- * all irqsafe, or all non-irqsafe, don't mix! If you need
- * the non-irqsafe version of this, you need to add it.
- */
-void ieee80211_sta_eosp_irqsafe(struct ieee80211_sta *pubsta);
 
 /**
  * ieee80211_iter_keys - iterate keys programmed into the device
@@ -4208,18 +4233,6 @@ void ieee80211_iter_keys(struct ieee80211_hw *hw,
  */
 struct sk_buff *ieee80211_ap_probereq_get(struct ieee80211_hw *hw,
 					  struct ieee80211_vif *vif);
-
-/**
- * ieee80211_beacon_loss - inform hardware does not receive beacons
- *
- * @vif: &struct ieee80211_vif pointer from the add_interface callback.
- *
- * When beacon filtering is enabled with %IEEE80211_HW_BEACON_FILTER and
- * %IEEE80211_CONF_PS is set, the driver needs to inform whenever the
- * hardware is not receiving beacons with this function.
- */
-void ieee80211_beacon_loss(struct ieee80211_vif *vif);
-
 /**
  * ieee80211_connection_loss - inform hardware has lost connection to the AP
  *
@@ -4233,6 +4246,108 @@ void ieee80211_beacon_loss(struct ieee80211_vif *vif);
  * without connection recovery attempts.
  */
 void ieee80211_connection_loss(struct ieee80211_vif *vif);
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
+
+/**
+ * ieee80211_cqm_rssi_notify - inform a configured connection quality monitoring
+ *	rssi threshold triggered
+ *
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ * @rssi_event: the RSSI trigger event type
+ * @gfp: context flags
+ *
+ * When the %IEEE80211_HW_SUPPORTS_CQM_RSSI is set, and a connection quality
+ * monitoring is configured with an rssi threshold, the driver will inform
+ * whenever the rssi level reaches the threshold.
+ */
+void ieee80211_cqm_rssi_notify(struct ieee80211_vif *vif,
+			       enum nl80211_cqm_rssi_threshold_event rssi_event,
+			       gfp_t gfp);
+
+/**
+ * ieee80211_beacon_loss - inform hardware does not receive beacons
+ *
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ *
+ * When beacon filtering is enabled with %IEEE80211_HW_BEACON_FILTER and
+ * %IEEE80211_CONF_PS is set, the driver needs to inform whenever the
+ * hardware is not receiving beacons with this function.
+ */
+void ieee80211_beacon_loss(struct ieee80211_vif *vif);
+
+/**
+ * ieee80211_sta_eosp - notify mac80211 about end of SP
+ * @pubsta: the station
+ *
+ * When a device transmits frames in a way that it can't tell
+ * mac80211 in the TX status about the EOSP, it must clear the
+ * %IEEE80211_TX_STATUS_EOSP bit and call this function instead.
+ * This applies for PS-Poll as well as uAPSD.
+ *
+ * Note that there is no non-_irqsafe version right now as
+ * it wasn't needed, but just like _tx_status() and _rx()
+ * must not be mixed in irqsafe/non-irqsafe versions, this
+ * function must not be mixed with those either. Use the
+ * all irqsafe, or all non-irqsafe, don't mix! If you need
+ * the non-irqsafe version of this, you need to add it.
+ */
+void ieee80211_sta_eosp_irqsafe(struct ieee80211_sta *pubsta);
+
+/**
+ * ieee80211_sta_block_awake - block station from waking up
+ * @hw: the hardware
+ * @pubsta: the station
+ * @block: whether to block or unblock
+ *
+ * Some devices require that all frames that are on the queues
+ * for a specific station that went to sleep are flushed before
+ * a poll response or frames after the station woke up can be
+ * delivered to that it. Note that such frames must be rejected
+ * by the driver as filtered, with the appropriate status flag.
+ *
+ * This function allows implementing this mode in a race-free
+ * manner.
+ *
+ * To do this, a driver must keep track of the number of frames
+ * still enqueued for a specific station. If this number is not
+ * zero when the station goes to sleep, the driver must call
+ * this function to force mac80211 to consider the station to
+ * be asleep regardless of the station's actual state. Once the
+ * number of outstanding frames reaches zero, the driver must
+ * call this function again to unblock the station. That will
+ * cause mac80211 to be able to send ps-poll responses, and if
+ * the station queried in the meantime then frames will also
+ * be sent out as a result of this. Additionally, the driver
+ * will be notified that the station woke up some time after
+ * it is unblocked, regardless of whether the station actually
+ * woke up while blocked or not.
+ */
+void ieee80211_sta_block_awake(struct ieee80211_hw *hw,
+			       struct ieee80211_sta *pubsta, bool block);
+
+/**
+ * ieee80211_find_sta_by_ifaddr - find a station on hardware
+ *
+ * @hw: pointer as obtained from ieee80211_alloc_hw()
+ * @addr: remote station's address
+ * @localaddr: local address (vif->sdata->vif.addr). Use NULL for 'any'.
+ *
+ * This function must be called under RCU lock and the
+ * resulting pointer is only valid under RCU lock as well.
+ *
+ * NOTE: You may pass NULL for localaddr, but then you will just get
+ *      the first STA that matches the remote address 'addr'.
+ *      We can have multiple STA associated with multiple
+ *      logical stations (e.g. consider a station connecting to another
+ *      BSSID on the same AP hardware without disconnecting first).
+ *      In this case, the result of this method with localaddr NULL
+ *      is not reliable.
+ *
+ * DO NOT USE THIS FUNCTION with localaddr NULL if at all possible.
+ */
+struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
+					       const u8 *addr,
+					       const u8 *localaddr);
 
 /**
  * ieee80211_resume_disconnect - disconnect from AP after resume
@@ -4273,6 +4388,7 @@ void ieee80211_resume_disconnect(struct ieee80211_vif *vif);
  * ieee80211_enable_dyn_ps() if the driver has disabled it.
  *
  */
+
 void ieee80211_disable_dyn_ps(struct ieee80211_vif *vif);
 
 /**
@@ -4286,22 +4402,6 @@ void ieee80211_disable_dyn_ps(struct ieee80211_vif *vif);
  *
  */
 void ieee80211_enable_dyn_ps(struct ieee80211_vif *vif);
-
-/**
- * ieee80211_cqm_rssi_notify - inform a configured connection quality monitoring
- *	rssi threshold triggered
- *
- * @vif: &struct ieee80211_vif pointer from the add_interface callback.
- * @rssi_event: the RSSI trigger event type
- * @gfp: context flags
- *
- * When the %IEEE80211_HW_SUPPORTS_CQM_RSSI is set, and a connection quality
- * monitoring is configured with an rssi threshold, the driver will inform
- * whenever the rssi level reaches the threshold.
- */
-void ieee80211_cqm_rssi_notify(struct ieee80211_vif *vif,
-			       enum nl80211_cqm_rssi_threshold_event rssi_event,
-			       gfp_t gfp);
 
 /**
  * ieee80211_get_operstate - get the operstate of the vif
@@ -4365,6 +4465,8 @@ void ieee80211_p2p_noa_notify(struct ieee80211_vif *vif,
  */
 void ieee80211_driver_hang_notify(struct ieee80211_vif *vif, gfp_t gfp);
 #endif
+
+
 /**
  * ieee80211_chswitch_done - Complete channel switch process
  * @vif: &struct ieee80211_vif pointer from the add_interface callback.
@@ -4402,6 +4504,8 @@ void ieee80211_request_smps(struct ieee80211_vif *vif,
  * key it tries to disable may still be used until it returns.
  */
 void ieee80211_key_removed(struct ieee80211_key_conf *key_conf);
+#endif
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 
 /**
  * ieee80211_ready_on_channel - notification of remain-on-channel start
@@ -4414,7 +4518,8 @@ void ieee80211_ready_on_channel(struct ieee80211_hw *hw,unsigned long roc_extend
  * @hw: pointer as obtained from ieee80211_alloc_hw()
  */
 void ieee80211_remain_on_channel_expired(struct ieee80211_hw *hw, u64 cookie);
-
+#endif
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 /**
  * ieee80211_stop_rx_ba_session - callback to stop existing BA sessions
  *
@@ -4431,6 +4536,8 @@ void ieee80211_remain_on_channel_expired(struct ieee80211_hw *hw, u64 cookie);
  */
 void ieee80211_stop_rx_ba_session(struct ieee80211_vif *vif, u16 ba_rx_bitmap,
 				  const u8 *addr);
+#endif
+#ifdef CONFIG_ATBM_SW_AGGTX
 
 /**
  * ieee80211_send_bar - send a BlockAckReq frame
@@ -4444,7 +4551,8 @@ void ieee80211_stop_rx_ba_session(struct ieee80211_vif *vif, u16 ba_rx_bitmap,
  * @ssn: the new starting sequence number for the receiver
  */
 void ieee80211_send_bar(struct ieee80211_vif *vif, u8 *ra, u16 tid, u16 ssn);
-
+#endif
+#ifndef CONFIG_RATE_HW_CONTROL
 /* Rate control API */
 
 /**
@@ -4545,8 +4653,6 @@ static inline int rate_supported(struct ieee80211_sta *sta,
 bool rate_control_send_low(struct ieee80211_sta *sta,
 			   void *priv_sta,
 			   struct ieee80211_tx_rate_control *txrc);
-
-
 static inline s8
 rate_lowest_index(struct ieee80211_supported_band *sband,
 		  struct ieee80211_sta *sta)
@@ -4578,30 +4684,7 @@ bool rate_usable_index_exists(struct ieee80211_supported_band *sband,
 
 int ieee80211_rate_control_register(struct rate_control_ops *ops);
 void ieee80211_rate_control_unregister(struct rate_control_ops *ops);
-
-static inline bool
-conf_is_ht20(struct ieee80211_channel_conf *conf)
-{
-	return conf->channel_type == NL80211_CHAN_HT20;
-}
-
-static inline bool
-conf_is_ht40_minus(struct ieee80211_channel_conf *conf)
-{
-	return conf->channel_type == NL80211_CHAN_HT40MINUS;
-}
-
-static inline bool
-conf_is_ht40_plus(struct ieee80211_channel_conf *conf)
-{
-	return conf->channel_type == NL80211_CHAN_HT40PLUS;
-}
-
-static inline bool
-conf_is_ht40(struct ieee80211_channel_conf *conf)
-{
-	return conf_is_ht40_minus(conf) || conf_is_ht40_plus(conf);
-}
+#endif
 
 static inline bool
 conf_is_ht(struct ieee80211_channel_conf *conf)
@@ -4643,18 +4726,20 @@ static inline void atbm_wdev_unlock(struct wireless_dev *wdev)
 	__release(wdev->mtx);
 	mutex_unlock(&wdev->mtx);
 }
-
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 void ieee80211_enable_rssi_reports(struct ieee80211_vif *vif,
 				   int rssi_min_thold,
 				   int rssi_max_thold);
 
 void ieee80211_disable_rssi_reports(struct ieee80211_vif *vif);
-
+#endif
+#if defined(CONFIG_MAC80211_ATBM_MESH) || defined(ATBM_SURPORT_TDLS)
 int ieee80211_add_srates_ie(struct ieee80211_vif *vif, struct sk_buff *skb);
 
 int ieee80211_add_ext_srates_ie(struct ieee80211_vif *vif,
 				struct sk_buff *skb);
-
+#endif
+struct sk_buff *ieee80211_special_queue_package(struct ieee80211_vif *vif,struct sk_buff *skb);
 struct atbm_ewma {
 	unsigned long internal;
 	unsigned long factor;
@@ -4743,7 +4828,7 @@ cont:
 	}
 	return NULL;
 }
-
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 static inline u8* atbm_ieee80211_find_p2p_ie(const u8 *ie_start,size_t ie_len)
 {
 	if((ie_start == NULL)||(ie_len == 0))
@@ -4809,28 +4894,94 @@ static inline int ieee80211_p2p_action_check(u8* data,ssize_t data_len)
 action_check_end:
 	return res;
 }
-
-
-#ifdef ATBM_PRIVATE_IE
-
-#define ATBM_USER_DATA_LEN 256
-struct atbm_private_ie{
-	u8 ElementId;
-	u8 Length;
-	u8 Oui[4];
-	u8 UserData[0];
-}__packed;
-struct sk_buff * atbm_mgmt_add_private_ie(struct sk_buff *skb);
 #endif
-
-extern 	int atbm_mac80211_iface_exit;
-static inline int atbm_ieee80211_module_exit(void)
-{	
-	return /*atbm_mac80211_iface_exit*/0;
-}
 #ifndef do_posix_clock_monotonic_gettime
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#define ktime_get_ts ktime_get_ts64
+#define timespec timespec64
+#endif
 #define do_posix_clock_monotonic_gettime(ts) ktime_get_ts(ts)
 #endif
+
+/*
+*atbm timer function
+*/
+struct atbm_timer_list {
+	struct timer_list timer;
+	void (*function)(unsigned long data);
+	unsigned long data;
+	unsigned long expires;
+};
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static inline void atbm_timer_handle(struct timer_list *in_timer)
+#else
+static inline void atbm_timer_handle(unsigned long data)
+#endif
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	struct atbm_timer_list *atbm_timer = from_timer(atbm_timer, in_timer, timer);
+#else
+	struct atbm_timer_list *atbm_timer = (struct atbm_timer_list *)data;
+#endif
+	BUG_ON(atbm_timer->function == NULL);
+	atbm_timer->function(atbm_timer->data);
+}
+
+static inline void atbm_init_timer(struct atbm_timer_list *atbm_timer)
+{
+	atbm_timer->expires = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	timer_setup(&atbm_timer->timer, atbm_timer_handle, 0);
+#else
+	/* setup_timer(ptimer, pfunc,(u32)cntx);	 */
+	atbm_timer->timer.function = atbm_timer_handle;
+	atbm_timer->timer.data = (unsigned long)atbm_timer;
+	init_timer(&atbm_timer->timer);
+#endif
+}
+
+static inline void atbm_setup_timer(struct atbm_timer_list *atbm_timer,
+				   void (*function)(unsigned long data),unsigned long data)
+{
+	atbm_timer->expires = 0;
+	atbm_timer->function = function;
+	atbm_timer->data = data;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	timer_setup(&atbm_timer->timer, atbm_timer_handle, 0);
+#else
+	
+	atbm_timer->timer.function = atbm_timer_handle;
+	atbm_timer->timer.data = (unsigned long)atbm_timer;
+	init_timer(&atbm_timer->timer);
+#endif
+}
+static inline int atbm_del_timer_sync(struct atbm_timer_list *atbm_timer)
+{
+	return del_timer_sync(&atbm_timer->timer);
+}
+static inline int atbm_mod_timer(struct atbm_timer_list *atbm_timer, unsigned long expires)
+{
+	int ret = 0;
+	ret =  mod_timer(&atbm_timer->timer,expires);
+	atbm_timer->expires = atbm_timer->timer.expires;
+
+	return ret;
+}
+
+static inline void atbm_add_timer(struct atbm_timer_list *atbm_timer)
+{
+	atbm_timer->timer.expires = atbm_timer->expires;
+	add_timer(&atbm_timer->timer);
+}
+
+static inline int atbm_del_timer(struct atbm_timer_list *atbm_timer)
+{
+	return del_timer(&atbm_timer->timer);
+}
+static inline int atbm_timer_pending(struct atbm_timer_list *atbm_timer)
+{
+	return timer_pending(&atbm_timer->timer);
+}
 extern struct cfg80211_bss *ieee80211_atbm_get_bss(struct wiphy *wiphy,
 				      struct ieee80211_channel *channel,
 				      const u8 *bssid,
@@ -4850,7 +5001,304 @@ extern struct cfg80211_bss *__ieee80211_atbm_get_authen_bss(struct ieee80211_vif
 					  struct ieee80211_channel *channel,
 				      const u8 *bssid,
 				      const u8 *ssid, size_t ssid_len);
+extern char *ieee80211_alloc_name(struct ieee80211_hw *hw,const char *name);
+extern bool atbm_ieee80211_is_robust_mgmt_frame(struct sk_buff *skb);
 
+
+#define IEEE80211_CHANNLE_SPECIAL_FREQ_FLAG				BIT(15)
+#define IEEE80211_CHANNLE_CCA_RUNNING_FLAG				BIT(14)
+
+#define IEEE80211_CHANNLE_HW_VALUE_MASK (IEEE80211_CHANNLE_SPECIAL_FREQ_FLAG|IEEE80211_CHANNLE_CCA_RUNNING_FLAG)
+
+static inline u16 channel_hw_value(struct ieee80211_channel *channel)
+{
+	return (channel->hw_value)&(~IEEE80211_CHANNLE_HW_VALUE_MASK);
+}
+
+static inline void channel_mask_special(struct ieee80211_channel *channel)
+{
+	channel->hw_value |= IEEE80211_CHANNLE_SPECIAL_FREQ_FLAG;
+}
+static inline void channel_mask_cca(struct ieee80211_channel *channel)
+{
+	channel->hw_value |= IEEE80211_CHANNLE_CCA_RUNNING_FLAG;
+}
+static inline void channel_clear_special(struct ieee80211_channel *channel)
+{
+	channel->hw_value &= ~IEEE80211_CHANNLE_SPECIAL_FREQ_FLAG;
+}
+static inline void channel_clear_cca(struct ieee80211_channel *channel)
+{
+	channel->hw_value &= ~IEEE80211_CHANNLE_CCA_RUNNING_FLAG;
+}
+static inline int channel_center_freq(struct ieee80211_channel *channel)
+{
+	return channel->center_freq;
+}
+static inline bool channel_in_special(struct ieee80211_channel *channel)
+{
+	return (channel->hw_value&IEEE80211_CHANNLE_SPECIAL_FREQ_FLAG) ? true:false;
+}
+static inline bool channel_in_cca(struct ieee80211_channel *channel)
+{
+	return (channel->hw_value&IEEE80211_CHANNLE_CCA_RUNNING_FLAG) ? true:false;
+}
+static inline bool atbm_accsii_to_hex(char pos,char *res)
+{
+	if((pos>='0')&&(pos<='9')){
+		*res = pos-'0';
+		return true;
+	}else if((pos>='a')&&(pos<='f')){
+		*res = pos - 'a'+0x0a;
+		return true;
+	}else if((pos>='A')&&(pos<='F')){
+		*res = pos - 'A'+0x0a;
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool atbm_accsii_to_int(const char *pos,int len,int *res)
+{
+	int res_val = 0;
+	int index = 0;
+	bool neg = false;
+	const char *accsii = pos;
+
+	if((len == 0) || (len>10) || (len<0))
+		return false;
+	
+	neg   = pos[0] == '-'  ? true:false;
+	index = neg    == true ? 1:0;
+
+	if((neg==true)&&(len == 1))
+		return false;
+	
+	for(;index<len;index++){
+		
+		if((accsii[index] < '0') || (accsii[index] > '9')){
+			return false;
+		}
+
+		res_val = res_val*10;
+
+		res_val += accsii[index]-'0';
+	}
+
+	res_val = neg == true?0-res_val:res_val;
+
+	*res = res_val;
+
+	return true;
+}
+static inline void atbm_common_hash_list_init(struct hlist_head *hlist,size_t size)
+{
+	size_t index = 0;
+	
+	for(index = 0;index<size;index++){
+		INIT_HLIST_HEAD(&hlist[index]);
+	}
+}
+
+static inline unsigned int atbm_hash_index(const char *string,unsigned int len,unsigned int hash_bit)
+{
+	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
+	unsigned int hash = full_name_hash(NULL,string,len);
+	#else
+	unsigned int hash = full_name_hash(string,len);
+	#endif
+
+	return hash_32(hash, hash_bit);
+}
+
+static inline struct hlist_head *atbm_hash_list(const char *string,unsigned int len,struct hlist_head *hlist_table,unsigned int hash_bit)
+{
+	unsigned int hash = atbm_hash_index(string,len,hash_bit);
+
+	return &hlist_table[hash];
+}
+static inline bool ieee8011_channel_valid(struct ieee80211_hw *hw,int channel)
+{
+	int freq;
+	struct ieee80211_channel *ch;
+	if(channel<=0)
+		return false;
+
+	if(channel<14){
+		freq = 2412+(channel-1)*5;
+	}else if(channel == 14){
+		freq = 2484;
+	}else{
+		freq = 5000 + 5 * channel;
+	}
+
+	ch = ieee80211_get_channel(hw->wiphy,freq);
+
+	return ch == NULL ? false:true;
+}
+
+static inline struct ieee80211_channel *ieee8011_chnum_to_channel(struct ieee80211_hw *hw,int channel)
+{
+	int freq;
+	if(channel<=0)
+		return NULL;
+
+	if(channel<14){
+		freq = 2412+(channel-1)*5;
+	}else if(channel == 14){
+		freq = 2484;
+	}else{
+		freq = 5000 + 5 * channel;
+	}
+
+	return ieee80211_get_channel(hw->wiphy,freq);
+}
+static inline u8 ieee80211_rssi_weight(s8 signal)
+{
+	u8 weight = 0;
+
+	if(signal <= -75)
+		weight = 0;
+	else if((signal>-75)&&(signal<= -65))
+		weight = 1;
+	else if((signal>-65)&&(signal<= -50))
+		weight = 2;
+	else if(signal > -50)
+		weight = 4;
+	else 
+		weight = 0;
+
+	return weight;
+}
+#define ATBM_SPACE	' '
+#define ATBM_LINEF	'\n'
+#define ATBM_ENTER	'\r'
+#define ATBM_TAIL	'\0'
+#define ATBM_EQUAL	'='
+#define ATBM_UNUSED	'#'
+#define ATBM_SOH	1
+#define ATBM_EOT	4
+#define ATBM_STX	2
+#define ATBM_ETX	3
+#define ATBM_SPACE_STR	" "
+#define ATBM_LINEF_STR	"\n"
+
+#define ATBM_COMMON_HASHBITS    4
+#define ATBM_COMMON_HASHENTRIES (1 << ATBM_COMMON_HASHBITS)
+
+#define ATBM_MAX_SCAN_IE							1
+#define ATBM_MAX_SCAN_SSID							2
+#define ATBM_MAX_SCAN_MAC_FILTER					8
+#define ATBM_MAX_SCAN_PRIVATE_IE_LEN				(255-4)
+#define ATBM_MAX_SCAN_CHANNEL						(14+4)
+
+//0
+
+//1
+#define ATBM_PRINTK_MASK_ERR			BIT(0)
+#define ATBM_PRINTK_MASK_WARN			BIT(1)
+#define ATBM_PRINTK_MASK_INIT			BIT(2)
+#define ATBM_PRINTK_MASK_EXIT			BIT(3)
+#define ATBM_PRINTK_MASK_SCAN			BIT(5)
+#define ATBM_PRINTK_MASK_LMAC			BIT(8)
+#define ATBM_PRINTK_MASK_WEXT			BIT(13)
+#define ATBM_PRINTK_MASK_PM				BIT(16)
+
+//2
+#define ATBM_PRINTK_MASK_P2P			BIT(6)
+#define ATBM_PRINTK_MASK_MGMT			BIT(7)
+#define ATBM_PRINTK_MASK_AP				BIT(10)
+#define ATBM_PRINTK_MASK_STA			BIT(11)
+#define ATBM_PRINTK_MASK_CFG80211		BIT(19)
+#define ATBM_PRINTK_MASK_PLATFROM		BIT(17)
+
+//3
+#define ATBM_PRINTK_MASK_BH				BIT(18)
+#define ATBM_PRINTK_MASK_TX				BIT(14)
+#define ATBM_PRINTK_MASK_RX				BIT(15)
+#define ATBM_PRINTK_MASK_AGG			BIT(9)
+#define ATBM_PRINTK_MASK_WSM			BIT(21)
+
+//4
+#define ATBM_PRINTK_MASK_BUS			BIT(4)
+#define ATBM_PRINTK_MASK_DEBUG			BIT(20)
+#define ATBM_PRINTK_MASK_SMARTCONFIG	BIT(12)
+
+#define ATBM_PRINTK_LEVEL1	(ATBM_PRINTK_MASK_ERR|ATBM_PRINTK_MASK_WARN|ATBM_PRINTK_MASK_INIT| \
+									ATBM_PRINTK_MASK_EXIT|ATBM_PRINTK_MASK_SCAN|ATBM_PRINTK_MASK_LMAC| \
+									ATBM_PRINTK_MASK_PM | ATBM_PRINTK_MASK_WEXT)
+#define ATBM_PRINTK_LEVEL2	(ATBM_PRINTK_LEVEL1 | ATBM_PRINTK_MASK_P2P | ATBM_PRINTK_MASK_MGMT | ATBM_PRINTK_MASK_AP | \
+									ATBM_PRINTK_MASK_STA | ATBM_PRINTK_MASK_CFG80211 | ATBM_PRINTK_MASK_PLATFROM)
+										
+#define ATBM_PRINTK_LEVEL3	(ATBM_PRINTK_LEVEL2 | ATBM_PRINTK_MASK_BH | ATBM_PRINTK_MASK_TX | ATBM_PRINTK_MASK_RX | \
+									ATBM_PRINTK_MASK_AGG | ATBM_PRINTK_MASK_WSM)
+#define ATBM_PRINTK_LEVEL4	(ATBM_PRINTK_LEVEL3 | ATBM_PRINTK_MASK_BUS | ATBM_PRINTK_MASK_DEBUG | ATBM_PRINTK_MASK_SMARTCONFIG)
+
+
+#define ATBM_PRINTK_DEFAULT_MASK ATBM_PRINTK_LEVEL1
+
+extern const char *atbm_log;
+
+#ifdef CONFIG_ATBM_MOULE_FS
+extern u32 atbm_printk_mask;
+#else
+#define atbm_printk_mask	ATBM_PRINTK_DEFAULT_MASK
+#endif
+
+#define ATBM_PRINTK_ALL ((u32)(-1))
+#define ATBM_PRINTK_CLEAR		(0)
+#define ATBM_TAG "[atbm_log]:"
+#define atbm_printk(_level,fmt,arg...) 	do {if(atbm_printk_mask&(_level)) printk(KERN_ERR "%s" fmt,atbm_log,##arg);}while(0)
+
+
+/*
+*atbm printk
+*/
+#define atbm_printk_err(...) 		atbm_printk(ATBM_PRINTK_MASK_ERR,__VA_ARGS__)
+#define atbm_printk_warn(...)		atbm_printk(ATBM_PRINTK_MASK_WARN,__VA_ARGS__)
+#define atbm_printk_init(...)		atbm_printk(ATBM_PRINTK_MASK_INIT,__VA_ARGS__)
+#define atbm_printk_exit(...)		atbm_printk(ATBM_PRINTK_MASK_EXIT,__VA_ARGS__)
+#define atbm_printk_bus(...)		atbm_printk(ATBM_PRINTK_MASK_BUS,__VA_ARGS__)
+#define atbm_printk_scan(...)		atbm_printk(ATBM_PRINTK_MASK_SCAN,__VA_ARGS__)
+#define atbm_printk_p2p(...)		atbm_printk(ATBM_PRINTK_MASK_P2P,__VA_ARGS__)
+#define atbm_printk_mgmt(...)		atbm_printk(ATBM_PRINTK_MASK_MGMT,__VA_ARGS__)
+#define atbm_printk_lmac(...)		atbm_printk(ATBM_PRINTK_MASK_LMAC,__VA_ARGS__)
+#define atbm_printk_agg(...)		atbm_printk(ATBM_PRINTK_MASK_AGG,__VA_ARGS__)
+#define atbm_printk_ap(...)			atbm_printk(ATBM_PRINTK_MASK_AP,__VA_ARGS__)
+#define atbm_printk_sta(...)		atbm_printk(ATBM_PRINTK_MASK_STA,__VA_ARGS__)
+#define atbm_printk_smt(...)		atbm_printk(ATBM_PRINTK_MASK_SMARTCONFIG,__VA_ARGS__)
+#define atbm_printk_wext(...)		atbm_printk(ATBM_PRINTK_MASK_WEXT,__VA_ARGS__)
+#define atbm_printk_tx(...)			atbm_printk(ATBM_PRINTK_MASK_TX,__VA_ARGS__)
+#define atbm_printk_rx(...)			atbm_printk(ATBM_PRINTK_MASK_RX,__VA_ARGS__)
+#define atbm_printk_pm(...)			atbm_printk(ATBM_PRINTK_MASK_PM,__VA_ARGS__)
+#define atbm_printk_platform(...)	atbm_printk(ATBM_PRINTK_MASK_PLATFROM,__VA_ARGS__)
+#define atbm_printk_bh(...)			atbm_printk(ATBM_PRINTK_MASK_BH,__VA_ARGS__)
+#define atbm_printk_cfg(...)		atbm_printk(ATBM_PRINTK_MASK_CFG80211,__VA_ARGS__)
+#define atbm_printk_wsm(...)		atbm_printk(ATBM_PRINTK_MASK_WSM,__VA_ARGS__)
+
+#define atbm_printk_debug(...)		atbm_printk(ATBM_PRINTK_MASK_DEBUG,__VA_ARGS__)
+								
+#define atbm_printk_always(fmt,arg...)		printk(KERN_ERR "%s" fmt,atbm_log,##arg)
+
+
+#define ATBM_MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
+#define ATBM_MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
+static inline const char* atbm_skip_space(const char *target,ssize_t len)
+{
+	const char* pos_end = target+len;
+
+	if((len <= 0)||(target == NULL)){
+		return NULL;
+	}
+	while((*target == ATBM_SPACE)||(*target == ATBM_LINEF)||(*target == ATBM_ENTER)){
+		target++;
+		if(target == pos_end){
+			break;
+		}
+	}
+	return (target == pos_end? NULL:target);
+}
 
 #define ieee80211_chw_is_ht40(chtype) (((chtype) == NL80211_CHAN_HT40PLUS) || ((chtype) == NL80211_CHAN_HT40MINUS))
 #define LIGHT	"\e[1m"
@@ -4858,4 +5306,11 @@ extern struct cfg80211_bss *__ieee80211_atbm_get_authen_bss(struct ieee80211_vif
 #define ENTER	"\n"
 #define highlight_debug(fmt,arg...)			\
 	printk(KERN_ERR LIGHT fmt NORMAL ENTER,##arg)
+
+#ifdef MODULE
+#define atbm_module_parent			(&THIS_MODULE->mkobj.kobj)
+#else
+#define atbm_module_parent			(NULL)
+#endif
+
 #endif /* MAC80211_H */

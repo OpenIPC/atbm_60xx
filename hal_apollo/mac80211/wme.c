@@ -75,12 +75,15 @@ u16 ieee80211_select_queue(struct ieee80211_sub_if_data *sdata,
 			qos = test_sta_flag(sta, WLAN_STA_WME);
 			break;
 		}
+   		fallthrough;
 	case NL80211_IFTYPE_AP:
 		ra = skb->data;
 		break;
+#ifdef CONFIG_ATBM_SUPPORT_WDS
 	case NL80211_IFTYPE_WDS:
 		ra = sdata->u.wds.remote_addr;
 		break;
+#endif
 #ifdef CONFIG_MAC80211_ATBM_MESH
 	case NL80211_IFTYPE_MESH_POINT:
 		ra = skb->data;
@@ -89,9 +92,11 @@ u16 ieee80211_select_queue(struct ieee80211_sub_if_data *sdata,
 	case NL80211_IFTYPE_STATION:
 		ra = sdata->u.mgd.bssid;
 		break;
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
 	case NL80211_IFTYPE_ADHOC:
 		ra = skb->data;
 		break;
+#endif
 	default:
 		break;
 	}

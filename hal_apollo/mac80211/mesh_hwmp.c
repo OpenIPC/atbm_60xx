@@ -13,7 +13,7 @@
 
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_MHWMP_DEBUG
 #define mhwmp_dbg(fmt, args...) \
-	printk(KERN_DEBUG "Mesh HWMP (%s): " fmt "\n", sdata->name, ##args)
+	atbm_printk_always("Mesh HWMP (%s): " fmt "\n", sdata->name, ##args)
 #else
 #define mhwmp_dbg(fmt, args...)   do { (void)(0); } while (0)
 #endif
@@ -134,7 +134,7 @@ static int mesh_path_sel_frame_tx(enum mpath_frame_type action, u8 flags,
 	memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
 	/* BSSID == SA */
 	memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
-	mgmt->u.action.category = WLAN_CATEGORY_MESH_ACTION;
+	mgmt->u.action.category = ATBM_WLAN_CATEGORY_MESH_ACTION;
 	mgmt->u.action.u.mesh_action.action_code =
 					WLAN_MESH_ACTION_HWMP_PATH_SELECTION;
 
@@ -261,7 +261,7 @@ int mesh_path_error_tx(u8 ttl, u8 *target, __le32 target_sn,
 	memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
 	/* BSSID == SA */
 	memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
-	mgmt->u.action.category = WLAN_CATEGORY_MESH_ACTION;
+	mgmt->u.action.category = ATBM_WLAN_CATEGORY_MESH_ACTION;
 	mgmt->u.action.u.mesh_action.action_code =
 					WLAN_MESH_ACTION_HWMP_PATH_SELECTION;
 	ie_len = 15;
@@ -885,7 +885,7 @@ static void mesh_queue_preq(struct mesh_path *mpath, u8 flags)
 		ifmsh->last_preq = jiffies - min_preq_int_jiff(sdata) - 1;
 		ieee80211_queue_work(&sdata->local->hw, &sdata->work);
 	} else
-		mod_timer(&ifmsh->mesh_path_timer, ifmsh->last_preq +
+		atbm_mod_timer(&ifmsh->mesh_path_timer, ifmsh->last_preq +
 						min_preq_int_jiff(sdata));
 }
 
@@ -966,7 +966,7 @@ void mesh_path_start_discovery(struct ieee80211_sub_if_data *sdata)
 			cpu_to_le32(mpath->sn), broadcast_addr, 0,
 			ttl, cpu_to_le32(lifetime), 0,
 			cpu_to_le32(ifmsh->preq_id++), sdata);
-	mod_timer(&mpath->timer, jiffies + mpath->discovery_timeout);
+	atbm_mod_timer(&mpath->timer, jiffies + mpath->discovery_timeout);
 
 enddiscovery:
 	rcu_read_unlock();

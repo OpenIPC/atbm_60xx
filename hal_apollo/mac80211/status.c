@@ -17,7 +17,7 @@
 #include "led.h"
 #include "wme.h"
 
-
+#if 0
 void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
 				 struct sk_buff *skb)
 {
@@ -38,8 +38,9 @@ void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
 	}
 	tasklet_schedule(&local->tasklet);
 }
+#endif
 //EXPORT_SYMBOL(ieee80211_tx_status_irqsafe);
-
+#ifndef CONFIG_TX_NO_CONFIRM
 static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 					    struct sta_info *sta,
 					    struct sk_buff *skb)
@@ -138,8 +139,8 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 		atbm_skb_queue_tail(&sta->tx_filtered[ac], skb);
 		sta_info_recalc_tim(sta);
 
-		if (!timer_pending(&local->sta_cleanup))
-			mod_timer(&local->sta_cleanup,
+		if (!atbm_timer_pending(&local->sta_cleanup))
+			atbm_mod_timer(&local->sta_cleanup,
 				  round_jiffies(jiffies +
 						STA_INFO_CLEANUP_INTERVAL));
 		return;
@@ -162,7 +163,8 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 #endif
 	atbm_dev_kfree_skb(skb);
 }
-
+#endif
+#ifdef CONFIG_ATBM_SW_AGGTX
 static void ieee80211_check_pending_bar(struct sta_info *sta, u8 *addr, u8 tid)
 {
 	struct tid_ampdu_tx *tid_tx;
@@ -174,13 +176,29 @@ static void ieee80211_check_pending_bar(struct sta_info *sta, u8 *addr, u8 tid)
 	tid_tx->bar_pending = false;
 	ieee80211_send_bar(&sta->sdata->vif, addr, tid, tid_tx->failed_bar_ssn);
 }
+static void ieee80211_set_bar_pending(struct sta_info *sta, u8 tid, u16 ssn)
+{
+	struct tid_ampdu_tx *tid_tx;
+
+	tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
+	if (!tid_tx)
+		return;
+
+	tid_tx->failed_bar_ssn = ssn;
+	tid_tx->bar_pending = true;
+}
+#endif
 
 static void ieee80211_frame_acked(struct sta_info *sta, struct sk_buff *skb)
 {
+#if defined (CONFIG_ATBM_SW_AGGTX) || defined (CONFIG_ATBM_SMPS)
 	struct atbm_ieee80211_mgmt *mgmt = (void *) skb->data;
+#endif
+#ifdef CONFIG_ATBM_SMPS
 	struct ieee80211_local *local = sta->local;
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
-
+#endif
+#ifdef CONFIG_ATBM_SW_AGGTX
 	if (ieee80211_is_data_qos(mgmt->frame_control)) {
 		struct ieee80211_hdr *hdr = (void *) skb->data;
 		u8 *qc = ieee80211_get_qos_ctl(hdr);
@@ -188,10 +206,12 @@ static void ieee80211_frame_acked(struct sta_info *sta, struct sk_buff *skb)
 
 		ieee80211_check_pending_bar(sta, hdr->addr1, tid);
 	}
+#endif
 
+#ifdef CONFIG_ATBM_SMPS
 	if (ieee80211_is_action(mgmt->frame_control) &&
 	    sdata->vif.type == NL80211_IFTYPE_STATION &&
-	    mgmt->u.action.category == WLAN_CATEGORY_HT &&
+	    mgmt->u.action.category == ATBM_WLAN_CATEGORY_HT &&
 	    mgmt->u.action.u.ht_smps.action == WLAN_HT_ACTION_SMPS) {
 		/*
 		 * This update looks racy, but isn't -- if we come
@@ -215,19 +235,10 @@ static void ieee80211_frame_acked(struct sta_info *sta, struct sk_buff *skb)
 
 		ieee80211_queue_work(&local->hw, &local->recalc_smps);
 	}
+#endif
 }
 
-static void ieee80211_set_bar_pending(struct sta_info *sta, u8 tid, u16 ssn)
-{
-	struct tid_ampdu_tx *tid_tx;
 
-	tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
-	if (!tid_tx)
-		return;
-
-	tid_tx->failed_bar_ssn = ssn;
-	tid_tx->bar_pending = true;
-}
 
 static int ieee80211_tx_radiotap_len(struct ieee80211_tx_info *info)
 {
@@ -341,7 +352,9 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	u16 frag, type;
+#if defined (CONFIG_ATBM_MAC80211_NO_USE) || defined (CONFIG_ATBM_SW_AGGTX)
 	__le16 fc;
+#endif
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
@@ -350,8 +363,10 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	int rates_idx = -1;
 	bool send_to_cooked;
 	bool acked;
+#ifdef CONFIG_ATBM_SW_AGGTX
 	struct ieee80211_bar *bar;
 	u16 tid;
+#endif
 	int rtap_len;
 
 	for (i = 0; i < IEEE80211_TX_MAX_RATES; i++) {
@@ -374,8 +389,9 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	rcu_read_lock();
 	sdata = vif_to_sdata(info->control.vif);
 	sband = local->hw.wiphy->bands[info->band];
+#if defined (CONFIG_ATBM_MAC80211_NO_USE) || defined (CONFIG_ATBM_SW_AGGTX)	
 	fc = hdr->frame_control;
-
+#endif
 	for_each_sta_info(local, hdr->addr1, sta, tmp) {
 		/* skip wrong virtual interface */
 		if (memcmp(hdr->addr2, sta->sdata->vif.addr, ETH_ALEN))
@@ -383,8 +399,8 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 
 		if (info->flags & IEEE80211_TX_STATUS_EOSP)
 			clear_sta_flag(sta, WLAN_STA_SP);
-
 		acked = !!(info->flags & IEEE80211_TX_STAT_ACK);
+#ifndef CONFIG_TX_NO_CONFIRM
 		if (!acked && test_sta_flag(sta, WLAN_STA_PS_STA)) {
 			/*
 			 * The STA is in power save mode, so assume
@@ -394,11 +410,11 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			rcu_read_unlock();
 			return;
 		}
-
+#endif
 		if ((local->hw.flags & IEEE80211_HW_HAS_RATE_CONTROL) &&
 		    (rates_idx != -1))
 			sta->last_tx_rate = info->status.rates[rates_idx];
-
+#ifdef CONFIG_ATBM_SW_AGGTX
 		if ((info->flags & IEEE80211_TX_STAT_AMPDU_NO_BACK) &&
 		    (ieee80211_is_data_qos(fc))) {
 			u16 tid, ssn;
@@ -432,42 +448,60 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 				ieee80211_set_bar_pending(sta, tid, ssn);
 			}
 		}
-
+#endif
+#ifndef CONFIG_TX_NO_CONFIRM
 		if (info->flags & IEEE80211_TX_STAT_TX_FILTERED) {
 			ieee80211_handle_filtered_frame(local, sta, skb);
 			rcu_read_unlock();
 			return;
-		} else {
+		} else 
+#endif
+		{
 			if (!acked)
 				sta->tx_retry_failed++;
 			sta->tx_retry_count += retry_count;
 		}
 		if(sta->sdata->vif.type == NL80211_IFTYPE_STATION){
-			if((info->flags & IEEE80211_TX_HANDSHAKE)&&acked){
+			if(info->flags & IEEE80211_TX_HANDSHAKE){
 				struct sk_buff *buffed_skb = NULL;
 				clear_sta_flag(sta,WLAN_STA_HANDSHAKE4OF4_SENDING);
 				set_sta_flag(sta,WLAN_STA_HANDSHAKE4OF4_SUCCESS);
 				smp_mb();
 				while((buffed_skb = atbm_skb_dequeue(&sta->handshake_buffed))){
 					struct ieee80211_tx_info *buffed_info = IEEE80211_SKB_CB(buffed_skb);
-					printk(KERN_ERR "%s:release buffed skb\n",__func__);
+					atbm_printk_mgmt("%s:release buffed skb\n",__func__);
 					buffed_info->flags |= IEEE80211_TX_INTFL_NEED_TXPROCESSING;
 					ieee80211_add_pending_skb(local, buffed_skb);
 				}
-				printk(KERN_ERR "%s:4/4 Pairwise Succeed\n",sta->sdata->name);
+				if(acked){
+					atbm_printk_mgmt("%s:4/4 Pairwise Succeed\n",sta->sdata->name);
+					
+				}else {
+					atbm_printk_err("%s:4/4 Pairwise Failed\n",sta->sdata->name);
+					/*
+					*Here Maybe needed deauthen
+					*/
+					if(sta->sdata)
+						ieee80211_connection_loss(&sta->sdata->vif);
+				}
 			}
 		}
+#ifndef CONFIG_RATE_HW_CONTROL
 		rate_control_tx_status(local, sband, sta, skb);
+#endif
+#ifdef CONFIG_MAC80211_ATBM_MESH
 		if (ieee80211_vif_is_mesh(&sta->sdata->vif))
 			ieee80211s_update_metric(local, sta, skb);
+#endif
 
 		if (!(info->flags & IEEE80211_TX_CTL_INJECTED) && acked)
 			ieee80211_frame_acked(sta, skb);
-
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 		if ((sta->sdata->vif.type == NL80211_IFTYPE_STATION) &&
 		    (local->hw.flags & IEEE80211_HW_REPORTS_TX_ACK_STATUS))
 			ieee80211_sta_tx_notify(sta->sdata, (void *) skb->data, acked);
-
+#endif
+#ifndef CONFIG_TX_NO_CONFIRM
 		if (local->hw.flags & IEEE80211_HW_REPORTS_TX_ACK_STATUS) {
 			if (info->flags & IEEE80211_TX_STAT_ACK) {
 				if (sta->lost_packets)
@@ -480,8 +514,9 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 				sta->lost_packets = 0;
 			}
 		}
+#endif
 	}
-	#ifdef ATBM_AP_SME
+#ifdef ATBM_AP_SME
 	if(info->flags & IEEE80211_TX_AP_HANDLE_STATUS)
 	{
 		if(!ieee80211_ap_sme_tx_mgmt_status(sdata,skb)){
@@ -489,7 +524,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			return;
 		}
 	}
-	#endif
+#endif
 	rcu_read_unlock();
 
 	ieee80211_led_tx(local, 0);
@@ -525,7 +560,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 		if (frag == 0)
 			local->dot11FailedCount++;
 	}
-
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 	if (ieee80211_is_nullfunc(fc) && ieee80211_has_pm(fc) &&
 	    (local->hw.flags & IEEE80211_HW_REPORTS_TX_ACK_STATUS) &&
 	    !(info->flags & IEEE80211_TX_CTL_INJECTED) &&
@@ -533,10 +568,10 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 		if (info->flags & IEEE80211_TX_STAT_ACK)
 			sdata->u.mgd.flags |= IEEE80211_STA_NULLFUNC_ACKED;
 		else
-			mod_timer(&sdata->dynamic_ps_timer, jiffies +
+			atbm_mod_timer(&sdata->dynamic_ps_timer, jiffies +
 					msecs_to_jiffies(10));
 	}
-
+#endif
 	if (info->flags & IEEE80211_TX_INTFL_NL80211_FRAME_TX) {
 		u64 cookie = (unsigned long)skb;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0))
@@ -611,6 +646,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	atbm_dev_kfree_skb(skb);
 }
 //EXPORT_SYMBOL(ieee80211_tx_status);
+#if defined (CONFIG_ATBM_MAC80211_NO_USE)
 
 void ieee80211_report_low_ack(struct ieee80211_sta *pubsta, u32 num_packets)
 {
@@ -624,3 +660,4 @@ char * ieee80211_vif_name_get(struct ieee80211_vif * vif)
 	return vif_to_sdata(vif)->name;
 }
 //EXPORT_SYMBOL(ieee80211_vif_name_get);
+#endif

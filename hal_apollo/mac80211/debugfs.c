@@ -70,7 +70,7 @@ DEBUGFS_READONLY_FILE(user_power, "%d",
 DEBUGFS_READONLY_FILE(power, "%d",
 		      local->hw.conf.power_level);
 DEBUGFS_READONLY_FILE(frequency, "%d",
-		      local->hw.conf.chan_conf->channel->center_freq);
+		      channel_center_freq(local->hw.conf.chan_conf->channel));
 DEBUGFS_READONLY_FILE(total_ps_buffered, "%d",
 		      local->total_ps_buffered);
 DEBUGFS_READONLY_FILE(wep_iv, "%#08x",
@@ -216,14 +216,14 @@ static ssize_t channel_type_read(struct file *file, char __user *user_buf,
 	struct ieee80211_local *local = file->private_data;
 	struct ieee80211_channel_state *chan_state;
 	const char *buf;
-
+#ifdef CONFIG_ATBM_SUPPORT_MULTI_CHANNEL
 	// XXX: COMBO: Todo, later
 	if (WARN(local->hw.flags & IEEE80211_HW_SUPPORTS_MULTI_CHANNEL,
 			"Cannot read channel type due to multi-channel operation. ")) {
 		buf = "notsupp";
 		return simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
 	}
-
+#endif
 	chan_state = ieee80211_get_channel_state(local, NULL);
 
 	switch (chan_state->conf.channel_type) {

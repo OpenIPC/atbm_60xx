@@ -364,6 +364,7 @@ minstrel_downgrade_rate(struct minstrel_ht_sta *mi, unsigned int *idx,
 static void
 minstrel_aggr_check(struct minstrel_priv *mp, struct ieee80211_sta *pubsta, struct sk_buff *skb)
 {
+#ifdef CONFIG_ATBM_SW_AGGTX
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
 	u16 tid;
@@ -382,6 +383,7 @@ minstrel_aggr_check(struct minstrel_priv *mp, struct ieee80211_sta *pubsta, stru
 		return;
 
 	ieee80211_start_tx_ba_session(pubsta, tid, 5000);
+#endif
 }
 
 static void
@@ -736,7 +738,7 @@ minstrel_ht_update_caps(void *priv, struct ieee80211_supported_band *sband,
 	if (oper_chan_type != NL80211_CHAN_HT40MINUS &&
 	    oper_chan_type != NL80211_CHAN_HT40PLUS)
 	{
-		printk("%s,%d:IEEE80211_HT_CAP_SUP_WIDTH_20_40\n",__func__,__LINE__);
+		atbm_printk_debug("%s,%d:IEEE80211_HT_CAP_SUP_WIDTH_20_40\n",__func__,__LINE__);
 		sta_cap &= ~IEEE80211_HT_CAP_SUP_WIDTH_20_40;
 	}
 
@@ -907,9 +909,8 @@ int
 rc80211_minstrel_ht_init(void)
 {
 	init_sample_table();
-        printk("xxxx minstrel ht init\n");
-	 printk(KERN_ERR "xxxx minstrel ht init\n");
-return ieee80211_rate_control_register(&mac80211_minstrel_ht);
+    atbm_printk_init("xxxx minstrel ht init\n");
+	return ieee80211_rate_control_register(&mac80211_minstrel_ht);
 }
 
 void

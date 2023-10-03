@@ -19,7 +19,7 @@
 #include "mesh.h"
 
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_MPATH_DEBUG
-#define mpath_dbg(fmt, args...)	printk(KERN_DEBUG fmt, ##args)
+#define mpath_dbg(fmt, args...)	atbm_printk_always(fmt, ##args)
 #else
 #define mpath_dbg(fmt, args...)	do { (void)(0); } while (0)
 #endif
@@ -570,7 +570,7 @@ int mesh_path_add(u8 *dst, struct ieee80211_sub_if_data *sdata)
 	new_mpath->timer.function = mesh_path_timer;
 	new_mpath->exp_time = jiffies;
 	spin_lock_init(&new_mpath->state_lock);
-	init_timer(&new_mpath->timer);
+	atbm_init_timer(&new_mpath->timer);
 
 	tbl = resize_dereference_mesh_paths();
 
@@ -696,7 +696,7 @@ int mpp_path_add(u8 *dst, u8 *mpp, struct ieee80211_sub_if_data *sdata)
 	new_mpath->flags = 0;
 	atbm_skb_queue_head_init(&new_mpath->frame_queue);
 	new_node->mpath = new_mpath;
-	init_timer(&new_mpath->timer);
+	atbm_init_timer(&new_mpath->timer);
 	new_mpath->exp_time = jiffies;
 	spin_lock_init(&new_mpath->state_lock);
 
@@ -781,7 +781,7 @@ static void mesh_path_node_reclaim(struct rcu_head *rp)
 	struct mpath_node *node = container_of(rp, struct mpath_node, rcu);
 	struct ieee80211_sub_if_data *sdata = node->mpath->sdata;
 
-	del_timer_sync(&node->mpath->timer);
+	atbm_del_timer_sync(&node->mpath->timer);
 	atomic_dec(&sdata->u.mesh.mpaths);
 	atbm_kfree(node->mpath);
 	atbm_kfree(node);
@@ -1071,7 +1071,7 @@ static void mesh_path_node_free(struct hlist_node *p, bool free_leafs)
 	mpath = node->mpath;
 	hlist_del_rcu(p);
 	if (free_leafs) {
-		del_timer_sync(&mpath->timer);
+		atbm_del_timer_sync(&mpath->timer);
 		atbm_kfree(mpath);
 	}
 	atbm_kfree(node);

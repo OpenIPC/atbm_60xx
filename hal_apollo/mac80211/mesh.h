@@ -96,7 +96,7 @@ struct mesh_path {
 	u8 mpp[ETH_ALEN];	/* used for MPP or MAP */
 	struct ieee80211_sub_if_data *sdata;
 	struct sta_info __rcu *next_hop;
-	struct timer_list timer;
+	struct atbm_timer_list timer;
 	struct sk_buff_head frame_queue;
 	struct rcu_head rcu;
 	u32 sn;

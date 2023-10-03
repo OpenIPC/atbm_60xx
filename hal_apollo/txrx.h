@@ -25,7 +25,7 @@
 /* extern */ struct wsm_tx_confirm;
 /* extern */ struct atbm_txpriv;
 /* extern */ struct atbm_vif;
-
+#ifndef CONFIG_RATE_HW_CONTROL
 struct tx_policy {
 	union {
 		__le32 tbl[3];
@@ -49,7 +49,6 @@ struct tx_policy_cache {
 	struct list_head free;
 	spinlock_t lock;
 };
-
 /* ******************************************************************** */
 /* TX policy cache							*/
 /* Intention of TX policy cache is an overcomplicated WSM API.
@@ -58,8 +57,8 @@ struct tx_policy_cache {
  * linux tx retry sequences with a retry policy table in the device.
  */
 void tx_policy_init(struct atbm_common *hw_priv);
-void tx_policy_upload_work(struct work_struct *work);
-
+void tx_policy_upload_work(struct atbm_work_struct *work);
+#endif
 /* ******************************************************************** */
 /* TX implementation							*/
 
@@ -81,18 +80,15 @@ void atbm_rx_cb(struct atbm_vif *priv,
 
 /* ******************************************************************** */
 /* Timeout								*/
-
-void atbm_tx_timeout(struct work_struct *work);
-
 /* ******************************************************************** */
 /* Security								*/
 int atbm_alloc_key(struct atbm_common *hw_priv);
 void atbm_free_key(struct atbm_common *hw_priv, int idx);
 void atbm_free_keys(struct atbm_common *hw_priv);
 int atbm_upload_keys(struct atbm_vif *priv);
-
+#if 0
 /* ******************************************************************** */
 /* Workaround for WFD test case 6.1.10					*/
-void atbm_link_id_reset(struct work_struct *work);
-
+void atbm_link_id_reset(struct atbm_work_struct *work);
+#endif
 #endif /* ATBM_APOLLO_TXRX_H */

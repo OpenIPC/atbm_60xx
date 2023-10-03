@@ -307,6 +307,7 @@ struct atbm_common;
 /* Macro to fetch encryption key index. */
 #define WSM_RX_STATUS_KEY_IDX(status)	(((status >> 20)) & 0x0F)
 #define WSM_RX_STATUS_SHORT_GI      (BIT(24))
+#define WSM_RX_STATUS_FILTER_FRAME	(BIT(29))
 
 /* Frame Control field starts at Frame offset + 2 */
 #define WSM_TX_2BYTES_SHIFT		(BIT(7))
@@ -364,9 +365,7 @@ struct atbm_common;
 #define WSM_START_MODE_AP		(0)	/* Mini AP */
 #define WSM_START_MODE_P2P_GO		(1)	/* P2P GO */
 #define WSM_START_MODE_P2P_DEV		(2)	/* P2P device */
-#ifdef ATBM_SUPPORT_PKG_MONITOR
 #define WSM_START_MODE_MONITOR_DEV	(3)
-#endif
 
 /* SetAssociationMode MIB flags */
 #define WSM_ASSOCIATION_MODE_USE_PREAMBLE_TYPE		(BIT(0))
@@ -587,6 +586,11 @@ struct atbm_common;
 #define WSM_MIB_ID_SET_EFUSE_DATA_ZHUANG	0x1040
 #define WSM_MIB_ID_SMARTCONFIG_START		0x1041
 #define WSM_MIB_ID_GET_EFUSE_CUR_STATUS		0x1042
+#define WSM_MIB_ID_SET_DUTY_RATIO			0x1043
+#define WSM_MIB_ID_GET_EFUSE_LAST_MAC		0x1044
+#define WSM_MIB_ID_GET_EFUSE_FIRST_MAC		0x1045
+#define WSM_MIB_ID_GET_TEMP_TX_REQ_ID		0x1046
+
 
 #define WSM_MIB_ID_GET_RATE					0x1050
 
@@ -595,6 +599,20 @@ struct atbm_common;
 
 #define WSM_MIB_ID_GET_CHANNEL_IDLE			0x1053
 #define WSM_MIB_ID_CHANNEL_TEST_START		0x1054
+
+#define WSM_MIB_ID_GET_MONITOR_MAC_STATUS	0x1055
+#define WSM_MIB_ID_GET_FIRST_BLOCK_EFUSE		0x1056
+#define WSM_MIB_ID_GET_TX_POWER_STATUS			0x1057//get tx power status currently
+#define WSM_MIB_ID_SET_RATE_TX_POWER			0x1058
+#define WSM_MIB_ID_SET_BEACON_RATE				0x1059
+#define WSM_MIB_ID_GET_CUR_MAX_RATE				0x105a
+#define WSM_MIB_ID_GET_EFUSE_ALL_DATA			0x105b
+#define WSM_MIB_ID_GET_CONFIG_TX_POWER			0x105c
+
+
+
+
+
 
 //#define WSM_START_FIND_ID                 0x0019 //used by efuse change data
 //#define WSM_START_FIND_RESP_ID            0x0419 //used by efuse change data
@@ -767,6 +785,10 @@ struct wsm_caps {
 	u32 HiHwCnfBufaddr;
 	int firmwareReady;
 	u32 exceptionaddr;
+	u16 NumOfInterfaces;
+	u16 NumOfStations;
+	u32 NumOfHwXmitedAddr;
+	u32 firmeareExCap;
 };
 
 /* ******************************************************************** */
@@ -852,10 +874,11 @@ struct wsm_scan_complete {
 
 	/* Duty Ratio for per channel */
 	u8 busy_ratio[14];
-	
+#ifdef CONFIG_ATBM_SUPPORT_SCHED_SCAN	
 #ifdef ROAM_OFFLOAD
 	u16 reserved;
 #endif /*ROAM_OFFLOAD*/
+#endif
 };
 
 typedef void (*wsm_scan_complete_cb) (struct atbm_common *hw_priv,
@@ -1642,6 +1665,28 @@ static inline int wsm_set_SIGMSTAR_256BITSEFUSE(struct atbm_common *hw_priv, u8 
 			    len,-1);
 }
 
+struct power_status_t{
+	s16 b_txpower_delta_value_multiple_10;
+	s16 gn_20m_txpower_delta_value_multiple_10;
+	s16 gn_40m_txpower_delta_value_multiple_10;
+	s16 reserve;
+};
+struct cfg_txpower_t{
+	s8 set_txpwr_delta_gain[3];
+	s8 set_b_txpwr_delta_gain[3];
+	s8 set_gn_txpwr_delta_gain[3];
+	s8 different_rate_txpower_mode[11];
+	s8 different_rate_txpower_mode_40M[11];
+	s8 reserve;
+};
+
+static inline int wsm_get_tx_power_status(struct atbm_common *hw_priv, void *pwrStatus, int len)
+{
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_TX_POWER_STATUS, pwrStatus,
+			    len,-1);
+}
+
+
 struct efuse_headr{
 	u8 specific;
 	u8 version;
@@ -1671,11 +1716,53 @@ static inline int wsm_get_efuse_data(struct atbm_common *hw_priv, void *efuse, i
 			    len,-1);
 }
 
+static inline int wsm_get_efuse_first_data(struct atbm_common *hw_priv, void *efuse, int len)
+{
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_FIRST_BLOCK_EFUSE, efuse,
+			    len,-1);
+}
+
+
 static inline int wsm_get_efuse_remain_bit(struct atbm_common *hw_priv, void *remainBit, int len)
 {
 	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_EFUSE_CUR_STATUS, remainBit,
 				len, -1);
 }
+
+static inline int wsm_get_efuse_last_mac(struct atbm_common *hw_priv, u8 *mac)
+{
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_EFUSE_LAST_MAC, mac,
+				ETH_ALEN, -1);
+}
+
+static inline int wsm_get_efuse_first_mac(struct atbm_common *hw_priv, u8 *mac)
+{
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_EFUSE_FIRST_MAC, mac,
+				ETH_ALEN, -1);
+}
+
+static inline int wsm_get_Tjroom_temperature(struct atbm_common *hw_priv, void *buf, int len)
+{
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_TEMP_TX_REQ_ID, buf,
+				len, -1);
+}
+
+static inline int wsm_get_efuse_all_data(struct atbm_common *hw_priv, void *buf, int len)
+{
+	if(buf == NULL)
+		return -1;
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_EFUSE_ALL_DATA, buf,
+				len, -1);
+}
+
+static inline int wsm_get_cfg_txpower(struct atbm_common *hw_priv, void *buf, int len)
+{
+	if(buf == NULL)
+		return -1;
+	return wsm_read_mib(hw_priv, WSM_MIB_ID_GET_CONFIG_TX_POWER, buf,
+				len, -1);
+}
+
 
 struct wsm_rx_filter {
 	bool promiscuous;
@@ -1705,11 +1792,16 @@ static inline int wsm_set_rx_filter(struct atbm_common *hw_priv,
 }
 
 int wsm_set_probe_responder(struct atbm_vif *priv, bool enable);
+#ifdef ATBM_SUPPORT_WOW
 int wsm_set_keepalive_filter(struct atbm_vif *priv, bool enable);
+#endif
 
-#define WSM_BEACON_FILTER_IE_HAS_CHANGED	BIT(0)
+#define WSM_BEACON_FILTER_IE_HAS_CHANGED		BIT(0)
 #define WSM_BEACON_FILTER_IE_NO_LONGER_PRESENT	BIT(1)
-#define WSM_BEACON_FILTER_IE_HAS_APPEARED	BIT(2)
+#define WSM_BEACON_FILTER_IE_HAS_APPEARED		BIT(2)
+#define WSM_BEACON_FILTER_FRAME_TYPE			BIT(3)
+#define WSM_BEACON_FILTER_ACTION_ENABLE			BIT(4)
+#define WSM_BEACON_FILTER_OUI					BIT(5)
 
 struct wsm_beacon_filter_table_entry {
 	u8	ieId;
@@ -1720,7 +1812,7 @@ struct wsm_beacon_filter_table_entry {
 
 struct wsm_beacon_filter_table {
 	__le32 numOfIEs;
-	struct wsm_beacon_filter_table_entry entry[10];
+	struct wsm_beacon_filter_table_entry entry[16];
 } __packed;
 
 static inline int wsm_set_beacon_filter_table(struct atbm_common *hw_priv,
@@ -1874,7 +1966,7 @@ static inline int wsm_set_block_ack_policy(struct atbm_common *hw_priv,
 	};
 	//printk("blockAckTxTidPolicy=%0x\n",blockAckTxTidPolicy);
 	//printk("blockAckRxTidPolicy=%0x\n",blockAckRxTidPolicy);
-	printk(KERN_DEBUG "%s:blockAckTxTidPolicy(%x),blockAckRxTidPolicy(%x),if_id(%d)\n",__func__,
+	atbm_printk_mgmt("%s:blockAckTxTidPolicy(%x),blockAckRxTidPolicy(%x),if_id(%d)\n",__func__,
 	blockAckTxTidPolicy,blockAckRxTidPolicy,if_id);
 	return wsm_write_mib(hw_priv, WSM_MIB_ID_BLOCK_ACK_POLICY, &val,
 			     sizeof(val), if_id);
@@ -1895,6 +1987,7 @@ static inline int wsm_set_association_mode(struct atbm_common *hw_priv,
 	return wsm_write_mib(hw_priv, WSM_MIB_ID_SET_ASSOCIATION_MODE, arg,
 			     sizeof(*arg), if_id);
 }
+#ifndef CONFIG_RATE_HW_CONTROL
 #define WSM_TX_RATE_POLICY_FLAG_TERMINATE_WHEN_FINISHED BIT(2)
 #define WSM_TX_RATE_POLICY_FLAG_COUNT_INITIAL_TRANSMIT BIT(3)
 struct wsm_set_tx_rate_retry_policy_header {
@@ -1912,6 +2005,7 @@ struct wsm_set_tx_rate_retry_policy_policy {
 	__le32 rateCountIndices[3];
 } __packed;
 
+
 struct wsm_set_tx_rate_retry_policy {
 	struct wsm_set_tx_rate_retry_policy_header hdr;
 	struct wsm_set_tx_rate_retry_policy_policy tbl[8];
@@ -1927,7 +2021,8 @@ static inline int wsm_set_tx_rate_retry_policy(struct atbm_common *hw_priv,
 	return wsm_write_mib(hw_priv, WSM_MIB_ID_SET_TX_RATE_RETRY_POLICY, arg,
 			     size, if_id);
 }
-
+#endif
+#ifdef ATBM_SUPPORT_WOW
 /* 4.32 SetEtherTypeDataFrameFilter */
 struct wsm_ether_type_filter_hdr {
 	u8 nrFilters;		/* Up to WSM_MAX_FILTER_ELEMENTS */
@@ -1972,7 +2067,7 @@ static inline int wsm_set_udp_port_filter(struct atbm_common *hw_priv,
 	return wsm_write_mib(hw_priv, WSM_MIB_ID_SET_UDPPORT_DATAFRAME_FILTER,
 		arg, size, if_id);
 }
-
+#endif
 /* Undocumented MIBs: */
 /* 4.35 P2PDeviceInfo */
 #define D11_MAX_SSID_LEN		(32)
@@ -2108,7 +2203,6 @@ static inline int wsm_set_multicast_filter(struct atbm_common *hw_priv,
 	return wsm_write_mib(hw_priv, WSM_MIB_ID_DOT11_GROUP_ADDRESSES_TABLE,
 			     fp, sizeof(*fp), if_id);
 }
-
 /* ARP IPv4 filtering - 4.10 */
 struct wsm_arp_ipv4_filter {
 	__le32 enable;
@@ -2137,7 +2231,7 @@ struct wsm_ipv6_filter {
 	struct wsm_ip6_addr_info ipv6filter[0];
 } __packed;
 #endif /*IPV6_FILTERING*/
-
+#ifdef CONFIG_ATBM_LMAC_FILTER_IP_FRAME
 static inline int wsm_set_arp_ipv4_filter(struct atbm_common *hw_priv,
 					  struct wsm_arp_ipv4_filter *fp,
 					  int if_id)
@@ -2155,7 +2249,7 @@ static inline int wsm_set_ndp_ipv6_filter(struct atbm_common *priv,
 			    fp, sizeof(*fp), if_id);
 }
 #endif /*IPV6_FILTERING*/
-
+#endif
 /* P2P Power Save Mode Info - 4.31 */
 struct wsm_p2p_ps_modeinfo {
 	u8	oppPsCTWindow;
@@ -2166,7 +2260,7 @@ struct wsm_p2p_ps_modeinfo {
 	__le32	interval;
 	__le32	startTime;
 } __packed;
-
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 static inline int wsm_set_p2p_ps_modeinfo(struct atbm_common *hw_priv,
 					  struct wsm_p2p_ps_modeinfo *mi,
 					  int if_id)
@@ -2181,7 +2275,7 @@ static inline int wsm_get_p2p_ps_modeinfo(struct atbm_common *hw_priv,
 	return wsm_read_mib(hw_priv, WSM_MIB_ID_P2P_PS_MODE_INFO,
 			    mi, sizeof(*mi),if_id);
 }
-
+#endif
 /* UseMultiTxConfMessage */
 
 static inline int wsm_use_multi_tx_conf(struct atbm_common *hw_priv,
@@ -2252,8 +2346,34 @@ static inline int wsm_set_rts_threshold(struct atbm_common *hw_priv,int if_id)
 }
 #endif
 
+#define WSM_GENERIC_REQ_ID 0x0003
+#define WSM_GENERIC_RESP_ID 0x0403
 
+#define WSM_GENERIC_REQ_CHILD__STA_INFO			(4)	
+#define WSM_STA_REQ_FLAGS__TXRATE				BIT(0)
+struct wsm_gen_req{
+	__le32 req_id;
+	u32	   req_len;
+	u8	   *params;
+};
+struct wsm_sta_info_req{
+	__le16 flags;
+	u8	   mac[6];
+}__packed;
+struct wsm_sta_info{
+	u32 	tx_rate;
+}__packed;
+int wsm_generic_req(struct atbm_common *hw_priv,const struct wsm_gen_req *arg,void *_buf,size_t buf_size,int if_id);
+static inline int atbm_req_sta_info(struct atbm_common *hw_priv,struct wsm_sta_info_req *req,struct wsm_sta_info *info,int if_id)
+{
+	struct wsm_gen_req arg;
+	
+	arg.req_id = WSM_GENERIC_REQ_CHILD__STA_INFO;
+	arg.params = (u8*)req;
+	arg.req_len = sizeof(struct wsm_sta_info_req);
 
+	return wsm_generic_req(hw_priv,&arg,(void *)info,sizeof(struct wsm_sta_info),if_id);
+}
 /* ******************************************************************** */
 /* WSM TX port control							*/
 
@@ -2326,6 +2446,7 @@ static inline u8 wsm_queue_id_to_wsm(u8 queueId)
 	};
 	return queue_mapping[queueId];
 }
+
 int wsm_read_shmem(struct atbm_common *hw_priv, u32 address, void *buffer, size_t buf_size);
 int wsm_write_shmem(struct atbm_common *hw_priv, u32 address,size_t size, void *buffer);
 #ifdef OPER_CLOCK_USE_SEM
@@ -2348,7 +2469,6 @@ void atbm_pm_timer(unsigned long arg);
 #define WSM_SET_CHANTYPE_FLAGS__ETF_GREEDFILED		(6)
 #define WSM_SET_CHANTYPE_FLAGS__ETF_TEST_START		(7)
 #define WSM_SET_CHANTYPE_PRB_TPC					(5)
-//see doc /* ´ø¿íÑ¡ÔñËã·¨.doc*/
 struct wsm_set_chantype
 {
 	u8		band;			//0:2.4G,1:5G
@@ -2390,6 +2510,7 @@ struct wsm_req_chtype_change_ind
 #define WSM_SEND_CHTYPE_CHG_REQUEST_IND_ID		(0x825)
 int wsm_set_chantype_func(struct atbm_common *hw_priv,
 				    struct wsm_set_chantype *arg,int if_id);
+#ifdef CONFIG_ATBM_40M_AUTO_CCA
 int wsm_get_cca(struct atbm_common *hw_priv,struct wsm_get_cca_req *arg,
 				struct wsm_get_cca_resp *cca_res,
 				int if_id);
@@ -2399,7 +2520,8 @@ extern int wsm_req_chtype_change_func(struct atbm_common *hw_priv,
 											struct wsm_req_chtype_change *arg,int if_id);
 int wsm_req_chtype_indication(struct atbm_common *hw_priv,
 					 struct wsm_buf *buf);
-void wsm_sync_channl_reset(struct work_struct *work);
+#endif
+void wsm_sync_channl_reset(struct atbm_work_struct *work);
 int  sdio_sync_channle_process(struct atbm_common *hw_priv);
 #endif
 #ifdef ATBM_SDIO_PATCH
@@ -2423,7 +2545,7 @@ struct atbm_seq_bit_map
 	struct wsm_bitmap bitm;
 };
 
-void wsm_sync_channl(struct work_struct *work);
+void wsm_sync_channl(struct atbm_work_struct *work);
 static inline int ALINE_BYTE(int len,int offset){
 	if(len%offset){ 
 		len-=(len%offset);
@@ -2447,5 +2569,6 @@ int  wsm_recovery_done(struct atbm_common *hw_priv,int type);
 void wsm_oper_unlock(struct atbm_common *hw_priv);
 void wsm_unlock_tx_async(struct atbm_common *hw_priv);
 void wsm_wait_pm_sync(struct atbm_common *hw_priv);
+int wsm_set_rate_power(struct atbm_common *hw_priv,int use_flag);
 
 #endif /* ATBM_APOLLO_HWIO_H_INCLUDED */

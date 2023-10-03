@@ -336,7 +336,7 @@ int mesh_add_ds_params_ie(struct sk_buff *skb,
 		pos = atbm_skb_put(skb, 2 + 1);
 		*pos++ = ATBM_WLAN_EID_DS_PARAMS;
 		*pos++ = 1;
-		*pos++ = ieee80211_frequency_to_channel(chan_state->conf.channel->center_freq);
+		*pos++ = ieee80211_frequency_to_channel(channel_center_freq(chan_state->conf.channel));
 	}
 
 	return 0;
@@ -381,7 +381,7 @@ void ieee80211_mesh_root_setup(struct ieee80211_if_mesh *ifmsh)
 	else {
 		clear_bit(MESH_WORK_ROOT, &ifmsh->wrkq_flags);
 		/* stop running timer */
-		del_timer_sync(&ifmsh->mesh_path_root_timer);
+		atbm_del_timer_sync(&ifmsh->mesh_path_root_timer);
 	}
 }
 
@@ -457,7 +457,7 @@ static void ieee80211_mesh_housekeeping(struct ieee80211_sub_if_data *sdata,
 	bool free_plinks;
 
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_DEBUG
-	printk(KERN_DEBUG "%s: running mesh housekeeping\n",
+	atbm_printk_debug( "%s: running mesh housekeeping\n",
 	       sdata->name);
 #endif
 
@@ -468,7 +468,7 @@ static void ieee80211_mesh_housekeeping(struct ieee80211_sub_if_data *sdata,
 	if (free_plinks != sdata->u.mesh.accepting_plinks)
 		ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_BEACON);
 
-	mod_timer(&ifmsh->housekeeping_timer,
+	atbm_mod_timer(&ifmsh->housekeeping_timer,
 		  round_jiffies(jiffies + IEEE80211_MESH_HOUSEKEEPING_INTERVAL));
 }
 
@@ -477,7 +477,7 @@ static void ieee80211_mesh_rootpath(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
 
 	mesh_path_tx_root_frame(sdata);
-	mod_timer(&ifmsh->mesh_path_root_timer,
+	atbm_mod_timer(&ifmsh->mesh_path_root_timer,
 		  round_jiffies(TU_TO_EXP_TIME(
 				  ifmsh->mshcfg.dot11MeshHWMPRannInterval)));
 }
@@ -489,11 +489,11 @@ void ieee80211_mesh_quiesce(struct ieee80211_sub_if_data *sdata)
 
 	/* use atomic bitops in case all timers fire at the same time */
 
-	if (del_timer_sync(&ifmsh->housekeeping_timer))
+	if (atbm_del_timer_sync(&ifmsh->housekeeping_timer))
 		set_bit(TMR_RUNNING_HK, &ifmsh->timers_running);
-	if (del_timer_sync(&ifmsh->mesh_path_timer))
+	if (atbm_del_timer_sync(&ifmsh->mesh_path_timer))
 		set_bit(TMR_RUNNING_MP, &ifmsh->timers_running);
-	if (del_timer_sync(&ifmsh->mesh_path_root_timer))
+	if (atbm_del_timer_sync(&ifmsh->mesh_path_root_timer))
 		set_bit(TMR_RUNNING_MPR, &ifmsh->timers_running);
 }
 
@@ -502,11 +502,11 @@ void ieee80211_mesh_restart(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
 
 	if (test_and_clear_bit(TMR_RUNNING_HK, &ifmsh->timers_running))
-		add_timer(&ifmsh->housekeeping_timer);
+		atbm_add_timer(&ifmsh->housekeeping_timer);
 	if (test_and_clear_bit(TMR_RUNNING_MP, &ifmsh->timers_running))
-		add_timer(&ifmsh->mesh_path_timer);
+		atbm_add_timer(&ifmsh->mesh_path_timer);
 	if (test_and_clear_bit(TMR_RUNNING_MPR, &ifmsh->timers_running))
-		add_timer(&ifmsh->mesh_path_root_timer);
+		atbm_add_timer(&ifmsh->mesh_path_root_timer);
 	ieee80211_mesh_root_setup(ifmsh);
 }
 #endif
@@ -542,8 +542,8 @@ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
 	ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_BEACON_ENABLED);
 	sta_info_flush(local, NULL);
 
-	del_timer_sync(&sdata->u.mesh.housekeeping_timer);
-	del_timer_sync(&sdata->u.mesh.mesh_path_root_timer);
+	atbm_del_timer_sync(&sdata->u.mesh.housekeeping_timer);
+	atbm_del_timer_sync(&sdata->u.mesh.mesh_path_root_timer);
 	/*
 	 * If the timer fired while we waited for it, it will have
 	 * requeued the work. Now the work will be running again
@@ -551,7 +551,7 @@ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
 	 * whether the interface is running, which, at this point,
 	 * it no longer is.
 	 */
-	cancel_work_sync(&sdata->work);
+	atbm_cancel_work_sync(&sdata->work);
 
 	sdata->req_filt_flags &= ~(FIF_OTHER_BSS);
 	sdata->flags &= ~IEEE80211_SDATA_ALLMULTI;
@@ -611,7 +611,7 @@ static void ieee80211_mesh_rx_mgmt_action(struct ieee80211_sub_if_data *sdata,
 					  struct ieee80211_rx_status *rx_status)
 {
 	switch (mgmt->u.action.category) {
-	case WLAN_CATEGORY_SELF_PROTECTED:
+	case ATBM_WLAN_CATEGORY_SELF_PROTECTED:
 		switch (mgmt->u.action.u.self_prot.action_code) {
 		case WLAN_SP_MESH_PEERING_OPEN:
 		case WLAN_SP_MESH_PEERING_CLOSE:
@@ -620,7 +620,7 @@ static void ieee80211_mesh_rx_mgmt_action(struct ieee80211_sub_if_data *sdata,
 			break;
 		}
 		break;
-	case WLAN_CATEGORY_MESH_ACTION:
+	case ATBM_WLAN_CATEGORY_MESH_ACTION:
 		if (mesh_action_is_path_sel(mgmt))
 			mesh_rx_path_sel_frame(sdata, mgmt, len);
 		break;
@@ -696,7 +696,7 @@ void ieee80211_mesh_init_sdata(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
 
-	setup_timer(&ifmsh->housekeeping_timer,
+	atbm_setup_timer(&ifmsh->housekeeping_timer,
 		    ieee80211_mesh_housekeeping_timer,
 		    (unsigned long) sdata);
 
@@ -710,10 +710,10 @@ void ieee80211_mesh_init_sdata(struct ieee80211_sub_if_data *sdata)
 	/* Allocate all mesh structures when creating the first mesh interface. */
 	if (!mesh_allocated)
 		ieee80211s_init();
-	setup_timer(&ifmsh->mesh_path_timer,
+	atbm_setup_timer(&ifmsh->mesh_path_timer,
 		    ieee80211_mesh_path_timer,
 		    (unsigned long) sdata);
-	setup_timer(&ifmsh->mesh_path_root_timer,
+	atbm_setup_timer(&ifmsh->mesh_path_root_timer,
 		    ieee80211_mesh_path_root_timer,
 		    (unsigned long) sdata);
 	INIT_LIST_HEAD(&ifmsh->preq_queue.list);

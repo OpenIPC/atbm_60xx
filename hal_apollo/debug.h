@@ -35,7 +35,7 @@ struct cw200_common;
 
 #define atbm_dbg(level, ...)				\
  if ((level) & ATBM_APOLLO_DBG_LEVEL)		\
-		printk(KERN_ERR __VA_ARGS__);	\
+		atbm_printk_init(__VA_ARGS__);	\
 
 
  /* TODO It should be removed before official delivery */
@@ -43,18 +43,15 @@ struct cw200_common;
  {
 	 int i;
 
-	 printk("%s hexdump:\n", prefix);
+	atbm_printk_always("%s hexdump:\n", prefix);
 	 for (i = 0; i < len; i++) {
 	 	if((i % 16)==0)
-			printk("\n");
-		printk("%02x ", data[i]);
+			atbm_printk_always("\n");
+		atbm_printk_always("%02x ", data[i]);
 
 	 }
-	 printk("\n");
+	atbm_printk_always("\n");
  }
-void ATBMWIFI_DBG_PRINT2(const char * func,const int line,unsigned int data);
-void ATBMWIFI_DBG_PRINT(const char * func,const int line);
-
 struct atbm_debug_param{
 	void *private;
 	char *buff;

@@ -16,6 +16,7 @@
 #include <asm/unaligned.h>
 #include <net/atbm_mac80211.h>
 #include <crypto/aes.h>
+//#include <crypto/algapi.h>
 
 #include "ieee80211_i.h"
 #include "michael.h"
@@ -156,6 +157,7 @@ update_iv:
 	return RX_CONTINUE;
 
 mic_fail:
+#ifdef CONFIG_ATBM_SUPPORT_MIC_FAILURE_REPORT
 	/*
 	 * In some cases the key can be unset - e.g. a multicast packet, in
 	 * a driver that supports HW encryption. Send up the key idx only if
@@ -164,6 +166,9 @@ mic_fail:
 	mac80211_ev_michael_mic_failure(rx->sdata,
 					rx->key ? rx->key->conf.keyidx : -1,
 					(void *) skb->data, NULL, GFP_ATOMIC);
+#else
+	atbm_printk_err("Mic Err\n");
+#endif
 	return RX_DROP_UNUSABLE;
 }
 
@@ -215,8 +220,13 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	/* Add room for ICV */
 	atbm_skb_put(skb, TKIP_ICV_LEN);
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 	return ieee80211_tkip_encrypt_data(tx->local->wep_tx_tfm,
 					   key, skb, pos, len);
+#else
+	return ieee80211_tkip_encrypt_data(&tx->local->wep_tx_ctx,
+					   key, skb, pos, len);
+#endif
 }
 
 
@@ -253,6 +263,11 @@ ieee80211_crypto_tkip_decrypt(struct ieee80211_rx_data *rx)
 	if (!rx->sta || skb->len - hdrlen < 12)
 		return RX_DROP_UNUSABLE;
 
+	/* it may be possible to optimize this a bit more */
+	if (skb_linearize(rx->skb))
+		return RX_DROP_UNUSABLE;
+	hdr = (void *)skb->data;
+
 	/*
 	 * Let TKIP code verify IV, but skip decryption.
 	 * In the case where hardware checks the IV as well,
@@ -261,12 +276,21 @@ ieee80211_crypto_tkip_decrypt(struct ieee80211_rx_data *rx)
 	if (status->flag & RX_FLAG_DECRYPTED)
 		hwaccel = 1;
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 	res = ieee80211_tkip_decrypt_data(rx->local->wep_rx_tfm,
 					  key, skb->data + hdrlen,
 					  skb->len - hdrlen, rx->sta->sta.addr,
 					  hdr->addr1, hwaccel, rx->security_idx,
 					  &rx->tkip_iv32,
 					  &rx->tkip_iv16);
+#else
+	res = ieee80211_tkip_decrypt_data(&rx->local->wep_rx_ctx,
+					  key, skb->data + hdrlen,
+					  skb->len - hdrlen, rx->sta->sta.addr,
+					  hdr->addr1, hwaccel, rx->security_idx,
+					  &rx->tkip_iv32,
+					  &rx->tkip_iv16);
+#endif  
 	if (res != TKIP_DECRYPT_OK)
 		return RX_DROP_UNUSABLE;
 
@@ -471,11 +495,7 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
 	if (!ieee80211_is_data(hdr->frame_control) &&
-	#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,17,0))
-	    !ieee80211_is_robust_mgmt_frame(hdr)
-	#else
-		 !ieee80211_is_robust_mgmt_frame(skb)
-	#endif
+		 !atbm_ieee80211_is_robust_mgmt_frame(skb)
 	    )
 		return RX_CONTINUE;
 
@@ -490,11 +510,11 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 	if (memcmp(pn, key->u.ccmp.rx_pn[queue], CCMP_PN_LEN) == 0) {
 		if(memcmp(pn,zero_pn,CCMP_PN_LEN) != 0){
 			key->u.ccmp.replays++;
-			printk(KERN_ERR "%s:pn[%pM],rx_pn[%pM]\n",__func__,pn,key->u.ccmp.rx_pn[queue]);
+			atbm_printk_err("pn[%pM],rx_pn[%pM]\n",pn,key->u.ccmp.rx_pn[queue]);
 			return RX_DROP_UNUSABLE;
 		}
 		else {
-			printk(KERN_ERR "%s:rx_pn is zero\n",__func__);
+			atbm_printk_err("%s:rx_pn is zero\n",__func__);
 		}
 	}
 

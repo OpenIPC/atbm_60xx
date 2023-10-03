@@ -24,7 +24,7 @@
 #include "ieee80211_i.h"
 #include "wep.h"
 
-
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 int ieee80211_wep_init(struct ieee80211_local *local)
 {
 	/* start WEP IV from a random value */
@@ -53,6 +53,14 @@ void ieee80211_wep_free(struct ieee80211_local *local)
 	if (!IS_ERR(local->wep_rx_tfm))
 		crypto_free_cipher(local->wep_rx_tfm);
 }
+#else
+void ieee80211_wep_init(struct ieee80211_local *local)
+{
+	/* start WEP IV from a random value */
+	get_random_bytes(&local->wep_iv, IEEE80211_WEP_IV_LEN);
+}
+
+#endif
 
 static inline bool ieee80211_wep_weak_iv(u32 iv, int keylen)
 {
@@ -67,6 +75,24 @@ static inline bool ieee80211_wep_weak_iv(u32 iv, int keylen)
 			return true;
 	}
 	return false;
+}
+
+
+bool ieee80211_wep_is_weak_iv(struct sk_buff *skb, struct ieee80211_key *key)
+{
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	unsigned int hdrlen;
+	u8 *ivpos;
+	u32 iv;
+
+	if (!ieee80211_has_protected(hdr->frame_control))
+		return false;
+
+	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	ivpos = skb->data + hdrlen;
+	iv = (ivpos[0] << 16) | (ivpos[1] << 8) | ivpos[2];
+
+	return ieee80211_wep_weak_iv(iv, key->conf.keylen);
 }
 
 
@@ -125,6 +151,7 @@ static void ieee80211_wep_remove_iv(struct ieee80211_local *local,
 /* Perform WEP encryption using given key. data buffer must have tailroom
  * for 4-byte ICV. data_len must not include this ICV. Note: this function
  * does _not_ add IV. data = RC4(data | CRC32(data)) */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 int ieee80211_wep_encrypt_data(struct crypto_cipher *tfm, u8 *rc4key,
 			       size_t klen, u8 *data, size_t data_len)
 {
@@ -143,6 +170,22 @@ int ieee80211_wep_encrypt_data(struct crypto_cipher *tfm, u8 *rc4key,
 
 	return 0;
 }
+#else
+int ieee80211_wep_encrypt_data(struct arc4_ctx *ctx, u8 *rc4key,
+			       size_t klen, u8 *data, size_t data_len)
+{
+	__le32 icv;
+
+	icv = cpu_to_le32(~crc32_le(~0, data, data_len));
+	put_unaligned(icv, (__le32 *)(data + data_len));
+
+	arc4_setkey(ctx, rc4key, klen);
+	arc4_crypt(ctx, data, data, data_len + IEEE80211_WEP_ICV_LEN);
+	memzero_explicit(ctx, sizeof(*ctx));
+
+	return 0;
+}
+#endif
 
 
 /* Perform WEP encryption on given skb. 4 bytes of extra space (IV) in the
@@ -175,14 +218,20 @@ int ieee80211_wep_encrypt(struct ieee80211_local *local,
 	/* Add room for ICV */
 	atbm_skb_put(skb, WEP_ICV_LEN);
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 	return ieee80211_wep_encrypt_data(local->wep_tx_tfm, rc4key, keylen + 3,
 					  iv + WEP_IV_LEN, len);
+#else
+	return ieee80211_wep_encrypt_data(&local->wep_tx_ctx, rc4key, keylen + 3,
+					  iv + WEP_IV_LEN, len);
+#endif
 }
 
 
 /* Perform WEP decryption using given key. data buffer includes encrypted
  * payload, including 4-byte ICV, but _not_ IV. data_len must not include ICV.
  * Return 0 on success and -1 on ICV mismatch. */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 int ieee80211_wep_decrypt_data(struct crypto_cipher *tfm, u8 *rc4key,
 			       size_t klen, u8 *data, size_t data_len)
 {
@@ -205,6 +254,24 @@ int ieee80211_wep_decrypt_data(struct crypto_cipher *tfm, u8 *rc4key,
 
 	return 0;
 }
+#else
+int ieee80211_wep_decrypt_data(struct arc4_ctx *ctx, u8 *rc4key,
+			       size_t klen, u8 *data, size_t data_len)
+{
+	__le32 crc;
+
+	arc4_setkey(ctx, rc4key, klen);
+	arc4_crypt(ctx, data, data, data_len + IEEE80211_WEP_ICV_LEN);
+	memzero_explicit(ctx, sizeof(*ctx));
+
+	crc = cpu_to_le32(~crc32_le(~0, data, data_len));
+	if (memcmp(&crc, data + data_len, IEEE80211_WEP_ICV_LEN) != 0)
+		/* ICV mismatch */
+		return -1;
+
+	return 0;
+}
+#endif
 
 
 /* Perform WEP decryption on given skb. Buffer includes whole WEP part of
@@ -249,9 +316,15 @@ static int ieee80211_wep_decrypt(struct ieee80211_local *local,
 	/* Copy rest of the WEP key (the secret part) */
 	memcpy(rc4key + 3, key->conf.key, key->conf.keylen);
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 	if (ieee80211_wep_decrypt_data(local->wep_rx_tfm, rc4key, klen,
 				       skb->data + hdrlen + WEP_IV_LEN,
 				       len))
+#else
+	if (ieee80211_wep_decrypt_data(&local->wep_rx_ctx, rc4key, klen,
+				       skb->data + hdrlen +
+				       WEP_IV_LEN, len))
+#endif
 		ret = -1;
 
 	/* Trim ICV */
@@ -262,24 +335,6 @@ static int ieee80211_wep_decrypt(struct ieee80211_local *local,
 	atbm_skb_pull(skb, WEP_IV_LEN);
 
 	return ret;
-}
-
-
-bool ieee80211_wep_is_weak_iv(struct sk_buff *skb, struct ieee80211_key *key)
-{
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned int hdrlen;
-	u8 *ivpos;
-	u32 iv;
-
-	if (!ieee80211_has_protected(hdr->frame_control))
-		return false;
-
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
-	ivpos = skb->data + hdrlen;
-	iv = (ivpos[0] << 16) | (ivpos[1] << 8) | ivpos[2];
-
-	return ieee80211_wep_weak_iv(iv, key->conf.keylen);
 }
 
 ieee80211_rx_result

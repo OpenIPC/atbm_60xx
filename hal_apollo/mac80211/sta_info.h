@@ -15,7 +15,7 @@
 #include <linux/workqueue.h>
 #include <linux/average.h>
 #include "key.h"
-
+#include "atbm_workqueue.h"
 /**
  * enum ieee80211_sta_info_flags - Stations flags
  *
@@ -123,7 +123,7 @@ enum ieee80211_sta_info_flags {
  */
 struct tid_ampdu_tx {
 	struct rcu_head rcu_head;
-	struct timer_list addba_resp_timer;
+	struct atbm_timer_list addba_resp_timer;
 	struct sk_buff_head pending;
 	unsigned long state;
 	u16 timeout;
@@ -165,8 +165,8 @@ struct tid_ampdu_rx {
 	spinlock_t reorder_lock;
 	struct sk_buff **reorder_buf;
 	unsigned long *reorder_time;
-	struct timer_list session_timer;
-	struct timer_list reorder_timer;
+	struct atbm_timer_list session_timer;
+	struct atbm_timer_list reorder_timer;
 	u16 head_seq_num;
 	u16 stored_mpdu_num;
 	u16 ssn;
@@ -198,7 +198,7 @@ struct sta_ampdu_mlme {
 	unsigned long tid_rx_timer_expired[BITS_TO_LONGS(STA_TID_NUM)];
 	unsigned long tid_rx_stop_requested[BITS_TO_LONGS(STA_TID_NUM)];
 	/* tx */
-	struct work_struct work;
+	struct atbm_work_struct work;
 	struct tid_ampdu_tx __rcu *tid_tx[STA_TID_NUM];
 	struct tid_ampdu_tx *tid_start_tx[STA_TID_NUM];
 	u8 addba_req_num[STA_TID_NUM];
@@ -293,10 +293,11 @@ struct sta_info {
 	size_t associate_ie_len;
 	#endif
 	spinlock_t lock;
-
-	struct work_struct drv_unblock_wk;
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
+	struct atbm_work_struct drv_unblock_wk;
+#endif
 #ifdef CONFIG_MAC80211_ATBM_ROAMING_CHANGES
-	struct work_struct sta_free_wk;
+	struct atbm_work_struct sta_free_wk;
 #endif
 
 	u16 listen_interval;
@@ -326,9 +327,12 @@ struct sta_info {
 	unsigned long rx_fragments;
 	unsigned long rx_dropped;
 	int last_signal;
+	int last_signal2;
 	struct atbm_ewma avg_signal;
+	struct atbm_ewma avg_signal2;
 	/* Plus 1 for non-QoS frames */
 	__le16 last_seq_ctrl[NUM_RX_DATA_QUEUES + 1];
+	__le16 last_frame_ctrl[NUM_RX_DATA_QUEUES + 1];
 
 	/* Updated from TX status path only, no locking requirements */
 	unsigned long tx_filtered_count;
@@ -364,10 +368,10 @@ struct sta_info {
 	bool plink_timer_was_running;
 	enum nl80211_plink_state plink_state;
 	u32 plink_timeout;
-	struct timer_list plink_timer;
+	struct atbm_timer_list plink_timer;
 #endif
 #ifdef ATBM_AP_SME
-	struct timer_list sta_session_timer;
+	struct atbm_timer_list sta_session_timer;
 #endif
 #ifdef CONFIG_MAC80211_ATBM_DEBUGFS
 	struct sta_info_debugfsdentries {
@@ -417,7 +421,7 @@ static inline int test_and_clear_sta_flag(struct sta_info *sta,
 {
 	return test_and_clear_bit(flag, &sta->_flags);
 }
-
+#ifdef CONFIG_ATBM_SW_AGGTX
 void ieee80211_assign_tid_tx(struct sta_info *sta, int tid,
 			     struct tid_ampdu_tx *tid_tx);
 
@@ -428,7 +432,7 @@ rcu_dereference_protected_tid_tx(struct sta_info *sta, int tid)
 					 lockdep_is_held(&sta->lock) ||
 					 lockdep_is_held(&sta->ampdu_mlme.mtx));
 }
-
+#endif
 #define STA_HASH_SIZE 256
 #define STA_HASH(sta) (sta[5])
 

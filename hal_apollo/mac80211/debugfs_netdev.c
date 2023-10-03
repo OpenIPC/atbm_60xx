@@ -160,7 +160,7 @@ IEEE80211_IF_FILE(bssid, u.mgd.bssid, MAC);
 IEEE80211_IF_FILE(aid, u.mgd.aid, DEC);
 IEEE80211_IF_FILE(last_beacon, u.mgd.last_beacon_signal, DEC);
 IEEE80211_IF_FILE(ave_beacon, u.mgd.ave_beacon_signal, DEC_DIV_16);
-
+#ifdef CONFIG_ATBM_SMPS
 static int ieee80211_set_smps(struct ieee80211_sub_if_data *sdata,
 			      enum ieee80211_smps_mode smps_mode)
 {
@@ -224,7 +224,7 @@ static ssize_t ieee80211_if_parse_smps(struct ieee80211_sub_if_data *sdata,
 }
 
 __IEEE80211_IF_FILE_W(smps);
-
+#endif
 static ssize_t ieee80211_if_fmt_tkip_mic_test(
 	const struct ieee80211_sub_if_data *sdata, char *buf, int buflen)
 {
@@ -449,7 +449,9 @@ static void add_sta_files(struct ieee80211_sub_if_data *sdata)
 	DEBUGFS_ADD(aid);
 	DEBUGFS_ADD(last_beacon);
 	DEBUGFS_ADD(ave_beacon);
+#ifdef CONFIG_ATBM_SMPS
 	DEBUGFS_ADD_MODE(smps, 0600);
+#endif
 	DEBUGFS_ADD_MODE(tkip_mic_test, 0200);
 }
 
@@ -632,6 +634,6 @@ void ieee80211_debugfs_rename_netdev(struct ieee80211_sub_if_data *sdata)
 
 	sprintf(buf, "netdev:%s", sdata->name);
 	if (!debugfs_rename(dir->d_parent, dir, dir->d_parent, buf))
-		printk(KERN_ERR "mac80211: debugfs: failed to rename debugfs "
+		atbm_printk_err( "mac80211: debugfs: failed to rename debugfs "
 		       "dir to %s\n", buf);
 }

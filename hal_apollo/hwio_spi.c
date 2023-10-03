@@ -90,7 +90,7 @@ int atbm_read_data(struct atbm_common *priv,  void *buf, u32 buf_len)
 
 	if (buf_len % SPI_READ_BLOCK_SIZE)
 	{
-		printk( "atbm_read_data error buf_len%%SPI_READ_BLOCK_SIZE !=0 \n");
+		atbm_printk_err("atbm_read_data error buf_len%%SPI_READ_BLOCK_SIZE !=0 \n");
 		return -1;
 	}
 		
@@ -98,14 +98,14 @@ int atbm_read_data(struct atbm_common *priv,  void *buf, u32 buf_len)
 		ret = atbm_read_block(priv, buf, buf_len);
 		if (ret)
 		{
-			printk( "atbm_read_data error\n");
+			atbm_printk_err("atbm_read_data error\n");
 			goto out;
 		}
 
 		ret = atbm_read_status(priv, &status);
 		if (ret)
 		{
-			printk( "atbm_read_status error\n");
+			atbm_printk_err( "atbm_read_status error\n");
 			goto out;
 			
 		}else
@@ -140,7 +140,7 @@ int atbm_write_data(struct atbm_common *priv,  const void *buf, u32 buf_len)
 
 	if (buf_len % SPI_WRITE_BLOCK_SIZE)
 	{
-		printk( "atbm_write_data error buf_len%%SPI_WRITE_BLOCK_SIZE !=0 \n");
+		atbm_printk_err("atbm_write_data error buf_len%%SPI_WRITE_BLOCK_SIZE !=0 \n");
 		return -1;
 	}
 
@@ -150,14 +150,14 @@ retry:
 		ret = atbm_write_block(priv, buf + totalLen, SPI_WRITE_BLOCK_SIZE);
 		if (ret)
 		{
-			printk( "atbm_write_data error\n");
+			atbm_printk_err("atbm_write_data error\n");
 			break;
 		}
 
 		ret = atbm_read_status(priv, &status);
 		if (ret)
 		{
-			printk( "atbm_read_status error\n");
+			atbm_printk_err("atbm_read_status error\n");
 			break;
 		}else
 		{
@@ -166,12 +166,12 @@ retry:
 				retrynum++;
 				if (retrynum > 5)
 				{
-					printk( "spi retry times too mach, return failed\n");
+					atbm_printk_err( "spi retry times too mach, return failed\n");
 					ret = -1;
 					break;
 				}
-				printk( "spi overrun error\n");
-				printk( "spi retry\n");
+				atbm_printk_err( "spi overrun error\n");
+				atbm_printk_err( "spi retry\n");
 				goto retry;
 			}
 		}
@@ -232,7 +232,7 @@ int atbm_before_load_firmware(struct atbm_common *hw_priv)
 		count++;
 		if (count > 1000)
 		{
-			printk(KERN_ERR "wait spi SPI_HW_SW_RDY timeout\n");
+			atbm_printk_err("wait spi SPI_HW_SW_RDY timeout\n");
 			break;
 		}
 	}
@@ -258,11 +258,11 @@ int atbm_after_load_firmware(struct atbm_common *hw_priv)
 			break;
 		}
 		msleep(600);
-		printk("[probe] wait hw ready %d\n", count);
+		atbm_printk_init("[probe] wait hw ready %d\n", count);
 		count++;
 		if (count > 20)
 		{
-			printk("[probe] wait hw ready timeout\n");
+			atbm_printk_err("[probe] wait hw ready timeout\n");
 			ret = -1;
 			break;
 		}

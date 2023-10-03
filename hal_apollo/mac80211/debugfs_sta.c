@@ -222,10 +222,12 @@ static ssize_t sta_agg_status_write(struct file *file, const char __user *userbu
 		return -EINVAL;
 
 	if (tx) {
+#ifdef CONFIG_ATBM_SW_AGGTX
 		if (start)
 			ret = ieee80211_start_tx_ba_session(&sta->sta, tid, 5000);
 		else
 			ret = ieee80211_stop_tx_ba_session(&sta->sta, tid);
+#endif
 	} else {
 		__ieee80211_stop_rx_ba_session(sta, tid, WLAN_BACK_RECIPIENT,
 					       3, true);

@@ -202,6 +202,38 @@ struct sta_info *sta_info_get_by_idx(struct ieee80211_sub_if_data *sdata,
 
 	return NULL;
 }
+static void sta_info_flush_cache_frag(struct ieee80211_sub_if_data *sdata,u8 *mac)
+{
+	struct ieee80211_fragment_entry *entry;
+	int i, idx;
+
+	idx = sdata->fragment_next;
+	for (i = 0; i < IEEE80211_FRAGMENT_MAX; i++) {
+		struct ieee80211_hdr *f_hdr;
+
+		idx--;
+		if (idx < 0)
+			idx = IEEE80211_FRAGMENT_MAX - 1;
+
+		entry = &sdata->fragments[idx];
+		
+		if (atbm_skb_queue_empty(&entry->skb_list))
+			continue;
+
+		f_hdr = (struct ieee80211_hdr *)entry->skb_list.next->data;
+
+		/*
+		 * Check ftype and addresses are equal, else check next fragment
+		 */
+		if (
+		    atbm_compare_ether_addr(mac, f_hdr->addr1) != 0 &&
+		    atbm_compare_ether_addr(mac, f_hdr->addr2) != 0)
+			continue;
+		atbm_printk_err("%s:[%pM] fragment flush start\n",__func__,mac);
+		__atbm_skb_queue_purge(&entry->skb_list);
+		atbm_printk_err("%s:[%pM] fragment flush end\n",__func__,mac);
+	}
+}
 
 /**
  * __sta_info_free - internal STA free helper
@@ -217,11 +249,12 @@ static void __sta_info_free(struct ieee80211_local *local,
 {
 	
 	atbm_skb_queue_purge(&sta->handshake_buffed);
+#ifndef CONFIG_RATE_HW_CONTROL
 	if (sta->rate_ctrl) {
 		rate_control_free_sta(sta);
 		rate_control_put(sta->rate_ctrl);
 	}
-
+#endif
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_DEBUG
 	wiphy_debug(local->hw.wiphy, "Destroyed STA %pM\n", sta->sta.addr);
 #endif /* CONFIG_MAC80211_ATBM_VERBOSE_DEBUG */
@@ -230,12 +263,13 @@ static void __sta_info_free(struct ieee80211_local *local,
 }
 
 #ifdef CONFIG_MAC80211_ATBM_ROAMING_CHANGES
-static void sta_free_work(struct work_struct *wk)
+static void sta_free_work(struct atbm_work_struct *wk)
 {
 	struct sta_info *sta = container_of(wk, struct sta_info, sta_free_wk);
 	struct ieee80211_local *local = sta->local;
-
-	cancel_work_sync(&sta->drv_unblock_wk);
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
+	atbm_cancel_work_sync(&sta->drv_unblock_wk);
+#endif
 	__sta_info_free(local, sta);
 }
 
@@ -247,8 +281,9 @@ void sta_info_free_rcu(struct rcu_head *rcu_h)
 	struct sta_info *sta = container_of(rcu_h, struct sta_info, rcu);
 	struct ieee80211_local *local = sta->local;
 	struct ieee80211_hw *hw = local_to_hw(local);
-
+#ifndef CONFIG_RATE_HW_CONTROL
 	rate_control_remove_sta_debugfs(sta);
+#endif
 	ieee80211_sta_debugfs_remove(sta);
 	/*
 	*when the phy has been suspened,the sta_free_wk
@@ -271,8 +306,8 @@ static void sta_info_hash_add(struct ieee80211_local *local,
 	sta->hnext = local->sta_hash[STA_HASH(sta->sta.addr)];
 	rcu_assign_pointer(local->sta_hash[STA_HASH(sta->sta.addr)], sta);
 }
-
-static void sta_unblock(struct work_struct *wk)
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
+static void sta_unblock(struct atbm_work_struct *wk)
 {
 	struct sta_info *sta;
 
@@ -298,7 +333,8 @@ static void sta_unblock(struct work_struct *wk)
 	} else
 		clear_sta_flag(sta, WLAN_STA_PS_DRIVER);
 }
-
+#endif
+#ifndef CONFIG_RATE_HW_CONTROL
 static int sta_prepare_rate_control(struct ieee80211_local *local,
 				    struct sta_info *sta, gfp_t gfp)
 {
@@ -315,7 +351,7 @@ static int sta_prepare_rate_control(struct ieee80211_local *local,
 
 	return 0;
 }
-
+#endif
 struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 				u8 *addr, gfp_t gfp)
 {
@@ -329,11 +365,13 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 		return NULL;
 
 	spin_lock_init(&sta->lock);
-	INIT_WORK(&sta->drv_unblock_wk, sta_unblock);
-#ifdef CONFIG_MAC80211_ATBM_ROAMING_CHANGES
-	INIT_WORK(&sta->sta_free_wk, sta_free_work);
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
+	ATBM_INIT_WORK(&sta->drv_unblock_wk, sta_unblock);
 #endif
-	INIT_WORK(&sta->ampdu_mlme.work, ieee80211_ba_session_work);
+#ifdef CONFIG_MAC80211_ATBM_ROAMING_CHANGES
+	ATBM_INIT_WORK(&sta->sta_free_wk, sta_free_work);
+#endif
+	ATBM_INIT_WORK(&sta->ampdu_mlme.work, ieee80211_ba_session_work);
 	mutex_init(&sta->ampdu_mlme.mtx);
 
 	memcpy(sta->sta.addr, addr, ETH_ALEN);
@@ -344,12 +382,13 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	do_posix_clock_monotonic_gettime(&uptime);
 	sta->last_connected = uptime.tv_sec;
 	atbm_ewma_init(&sta->avg_signal, 1024, 8);
-
+	atbm_ewma_init(&sta->avg_signal2, 1024, 8);
+#ifndef CONFIG_RATE_HW_CONTROL
 	if (sta_prepare_rate_control(local, sta, gfp)) {
 		atbm_kfree(sta);
 		return NULL;
 	}
-
+#endif
 	for (i = 0; i < STA_TID_NUM; i++) {
 		/*
 		 * timer_to_tid must be initialized with identity mapping
@@ -372,7 +411,7 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 
 #ifdef CONFIG_MAC80211_ATBM_MESH
 	sta->plink_state = NL80211_PLINK_LISTEN;
-	init_timer(&sta->plink_timer);
+	atbm_init_timer(&sta->plink_timer);
 #endif
 
 #ifdef ATBM_AP_SME
@@ -398,7 +437,7 @@ void sta_info_set_mgmt_suit(struct sta_info *sta,struct cfg80211_crypto_settings
 	}
 
 	if(!test_sta_flag(sta,WLAN_STA_WPA_RSN)){
-		printk(KERN_ERR "%s:not wpa_rsn\n",__func__);
+		atbm_printk_mgmt("%s:not wpa_rsn\n",__func__);
 		return;
 	}
 	
@@ -424,7 +463,7 @@ void sta_info_set_mgmt_suit(struct sta_info *sta,struct cfg80211_crypto_settings
 		if(new_mic_len != sta->mic_len)
 			sta->mic_len = new_mic_len;
 	}
-	printk(KERN_ERR "%s:sta->mic_len(%d)\n",__func__,sta->mic_len);
+	atbm_printk_mgmt("%s:sta->mic_len(%d)\n",__func__,sta->mic_len);
 }
 static int sta_info_finish_insert(struct sta_info *sta,
 				bool async, bool dummy_reinsert)
@@ -447,7 +486,7 @@ static int sta_info_finish_insert(struct sta_info *sta,
 		if (err) {
 			if (!async)
 				return err;
-			printk(KERN_DEBUG "%s: failed to add IBSS STA %pM to "
+			atbm_printk_sta( "%s: failed to add IBSS STA %pM to "
 					  "driver (%d) - keeping it anyway.\n",
 			       sdata->name, sta->sta.addr, err);
 		} else {
@@ -482,7 +521,9 @@ static int sta_info_finish_insert(struct sta_info *sta,
 
 	if (!sta->dummy) {
 		ieee80211_sta_debugfs_add(sta);
+#ifndef CONFIG_RATE_HW_CONTROL
 		rate_control_add_sta_debugfs(sta);
+#endif
 		memset(&sinfo, 0, sizeof(sinfo));
 		sinfo.filled = 0;
 		sinfo.generation = local->sta_generation;
@@ -520,7 +561,7 @@ static void sta_info_finish_pending(struct ieee80211_local *local)
 	spin_unlock_irqrestore(&local->sta_lock, flags);
 }
 
-static void sta_info_finish_work(struct work_struct *work)
+static void sta_info_finish_work(struct atbm_work_struct *work)
 {
 	struct ieee80211_local *local =
 		container_of(work, struct ieee80211_local, sta_finish_work);
@@ -548,7 +589,7 @@ static int sta_info_insert_check(struct sta_info *sta)
 
 	return 0;
 }
-
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
 static int sta_info_insert_ibss(struct sta_info *sta) __acquires(RCU)
 {
 	struct ieee80211_local *local = sta->local;
@@ -582,7 +623,7 @@ static int sta_info_insert_ibss(struct sta_info *sta) __acquires(RCU)
 
 	return 0;
 }
-
+#endif
 /*
  * should be called with sta_mtx locked
  * this function replaces the mutex lock
@@ -646,9 +687,10 @@ static int sta_info_insert_non_ibss(struct sta_info *sta) __acquires(RCU)
 	/* move reference to rcu-protected */
 	rcu_read_lock();
 	mutex_unlock(&local->sta_mtx);
-
+#ifdef CONFIG_MAC80211_ATBM_MESH
 	if (ieee80211_vif_is_mesh(&sdata->vif))
 		mesh_accept_plinks_update(sdata);
+#endif
 
 	return 0;
 }
@@ -656,7 +698,9 @@ static int sta_info_insert_non_ibss(struct sta_info *sta) __acquires(RCU)
 int sta_info_insert_rcu(struct sta_info *sta) __acquires(RCU)
 {
 	struct ieee80211_local *local = sta->local;
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
+#endif
 	int err = 0;
 
 	err = sta_info_insert_check(sta);
@@ -670,6 +714,7 @@ int sta_info_insert_rcu(struct sta_info *sta) __acquires(RCU)
 	 * from tasklet context from the RX path. To avoid races,
 	 * always do so in that case -- see the comment below.
 	 */
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
 	if (sdata->vif.type == NL80211_IFTYPE_ADHOC) {
 		err = sta_info_insert_ibss(sta);
 		if (err)
@@ -677,7 +722,7 @@ int sta_info_insert_rcu(struct sta_info *sta) __acquires(RCU)
 
 		return 0;
 	}
-
+#endif
 	/*
 	 * It might seem that the function called below is in race against
 	 * the function call above that atomically inserts the station... That,
@@ -909,7 +954,7 @@ static bool sta_info_cleanup_expire_buffered_ac(struct ieee80211_local *local,
 
 		local->total_ps_buffered--;
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_PS_DEBUG
-		printk(KERN_DEBUG "Buffered frame expired (STA %pM)\n",
+		atbm_printk_debug("Buffered frame expired (STA %pM)\n",
 		       sta->sta.addr);
 #endif
 		atbm_dev_kfree_skb(skb);
@@ -941,10 +986,10 @@ static bool sta_info_cleanup_expire_buffered(struct ieee80211_local *local,
 	if (!sta->sdata->bss)
 		return false;
 	
-	#ifdef ATBM_AP_SME 
+#ifdef ATBM_AP_SME 
 	if( !test_sta_flag(sta, WLAN_STA_ASSOC_AP))
 		return false;
-	#endif
+#endif
 	
 	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
 		have_buffered |=
@@ -975,7 +1020,7 @@ static int __must_check __sta_info_destroy(struct sta_info *sta)
 	 * will be sufficient.
 	 */
 	#ifdef ATBM_AP_SME
-	del_timer_sync(&sta->sta_session_timer);	
+	atbm_del_timer_sync(&sta->sta_session_timer);	
 	ieee80211_ap_sme_free_aid(sdata,sta);
 	if(test_sta_flag(sta,WLAN_STA_DEAUTHENNING))
 		ieee80211_ap_sme_sta_sync_unlock(sdata);
@@ -1016,7 +1061,14 @@ static int __must_check __sta_info_destroy(struct sta_info *sta)
 		atomic_dec(&sdata->bss->num_sta_ps);
 		sta_info_recalc_tim(sta);
 	}
-
+	if(sdata->vif.type == NL80211_IFTYPE_AP){
+		/*
+		*no function to cancle the sta package in the lower driver,so
+		*call this function.
+		*/
+		synchronize_rcu();
+		drv_flush(local, sdata, false);
+	}
 	local->num_sta--;
 	local->sta_generation++;
 
@@ -1031,6 +1083,8 @@ static int __must_check __sta_info_destroy(struct sta_info *sta)
 		drv_sta_remove(local, sdata, &sta->sta);
 		sdata = sta->sdata;
 	}
+	
+	sta_info_flush_cache_frag(sdata,sta->sta.addr);
 #ifdef CONFIG_MAC80211_ATBM_ROAMING_CHANGES
 	/*
 	 * In STA mode use non blocking rcu to decrease
@@ -1071,17 +1125,20 @@ static int __must_check __sta_info_destroy(struct sta_info *sta)
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_DEBUG
 	wiphy_debug(local->hw.wiphy, "Removed STA %pM\n", sta->sta.addr);
 #endif /* CONFIG_MAC80211_ATBM_VERBOSE_DEBUG */
-	cancel_work_sync(&sta->drv_unblock_wk);
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
+	atbm_cancel_work_sync(&sta->drv_unblock_wk);
+#endif
 
 	cfg80211_del_sta(sdata->dev, sta->sta.addr, GFP_KERNEL);
-
+#ifndef CONFIG_RATE_HW_CONTROL
 	rate_control_remove_sta_debugfs(sta);
+#endif
 	ieee80211_sta_debugfs_remove(sta);
 
 #ifdef CONFIG_MAC80211_ATBM_MESH
 	if (ieee80211_vif_is_mesh(&sta->sdata->vif)) {
 		mesh_plink_deactivate(sta);
-		del_timer_sync(&sta->plink_timer);
+		atbm_del_timer_sync(&sta->plink_timer);
 	}
 #endif
 	#ifdef ATBM_AP_SME
@@ -1145,7 +1202,7 @@ static void sta_info_cleanup(unsigned long data)
 	if (!timer_needed)
 		return;
 
-	mod_timer(&local->sta_cleanup,
+	atbm_mod_timer(&local->sta_cleanup,
 		  round_jiffies(jiffies + STA_INFO_CLEANUP_INTERVAL));
 }
 
@@ -1155,15 +1212,15 @@ void sta_info_init(struct ieee80211_local *local)
 	mutex_init(&local->sta_mtx);
 	INIT_LIST_HEAD(&local->sta_list);
 	INIT_LIST_HEAD(&local->sta_pending_list);
-	INIT_WORK(&local->sta_finish_work, sta_info_finish_work);
+	ATBM_INIT_WORK(&local->sta_finish_work, sta_info_finish_work);
 
-	setup_timer(&local->sta_cleanup, sta_info_cleanup,
+	atbm_setup_timer(&local->sta_cleanup, sta_info_cleanup,
 		    (unsigned long)local);
 }
 
 void sta_info_stop(struct ieee80211_local *local)
 {
-	del_timer(&local->sta_cleanup);
+	atbm_del_timer(&local->sta_cleanup);
 	sta_info_flush(local, NULL);
 }
 
@@ -1206,37 +1263,13 @@ void ieee80211_sta_expire(struct ieee80211_sub_if_data *sdata,
 	list_for_each_entry_safe(sta, tmp, &local->sta_list, list)
 		if (time_after(jiffies, sta->last_rx + exp_time)) {
 #ifdef CONFIG_MAC80211_ATBM_IBSS_DEBUG
-			printk(KERN_DEBUG "%s: expiring inactive STA %pM\n",
+			atbm_printk_debug("%s: expiring inactive STA %pM\n",
 			       sdata->name, sta->sta.addr);
 #endif
 			WARN_ON(__sta_info_destroy(sta));
 		}
 	mutex_unlock(&local->sta_mtx);
 }
-
-struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
-					       const u8 *addr,
-					       const u8 *localaddr)
-{
-	struct sta_info *sta, *nxt;
-
-	/*
-	 * Just return a random station if localaddr is NULL
-	 * ... first in list.
-	 */
-	for_each_sta_info(hw_to_local(hw), addr, sta, nxt) {
-		if (localaddr &&
-		    atbm_compare_ether_addr(sta->sdata->vif.addr, localaddr) != 0)
-			continue;
-		if (!sta->uploaded)
-			return NULL;
-		return &sta->sta;
-	}
-
-	return NULL;
-}
-//EXPORT_SYMBOL_GPL(ieee80211_find_sta_by_ifaddr);
-
 struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_vif *vif,
 					 const u8 *addr)
 {
@@ -1303,7 +1336,7 @@ void ieee80211_sta_ps_deliver_wakeup(struct sta_info *sta)
 	sta_info_recalc_tim(sta);
 
 #ifdef CONFIG_MAC80211_ATBM_VERBOSE_PS_DEBUG
-	printk(KERN_DEBUG "%s: STA %pM aid %d sending %d filtered/%d PS frames "
+	atbm_printk_debug("%s: STA %pM aid %d sending %d filtered/%d PS frames "
 	       "since STA not sleeping anymore\n", sdata->name,
 	       sta->sta.addr, sta->sta.aid, filtered, buffered);
 #endif /* CONFIG_MAC80211_ATBM_VERBOSE_PS_DEBUG */
@@ -1603,7 +1636,7 @@ void ieee80211_sta_ps_deliver_uapsd(struct sta_info *sta)
 	ieee80211_sta_ps_deliver_response(sta, n_frames, ~delivery_enabled,
 					  IEEE80211_FRAME_RELEASE_UAPSD);
 }
-
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 void ieee80211_sta_block_awake(struct ieee80211_hw *hw,
 			       struct ieee80211_sta *pubsta, bool block)
 {
@@ -1642,7 +1675,29 @@ void ieee80211_sta_eosp_irqsafe(struct ieee80211_sta *pubsta)
 	tasklet_schedule(&local->tasklet);
 }
 //EXPORT_SYMBOL(ieee80211_sta_eosp_irqsafe);
+struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *hw,
+					       const u8 *addr,
+					       const u8 *localaddr)
+{
+	struct sta_info *sta, *nxt;
 
+	/*
+	 * Just return a random station if localaddr is NULL
+	 * ... first in list.
+	 */
+	for_each_sta_info(hw_to_local(hw), addr, sta, nxt) {
+		if (localaddr &&
+		    atbm_compare_ether_addr(sta->sdata->vif.addr, localaddr) != 0)
+			continue;
+		if (!sta->uploaded)
+			return NULL;
+		return &sta->sta;
+	}
+
+	return NULL;
+}
+//EXPORT_SYMBOL_GPL(ieee80211_find_sta_by_ifaddr);
+#endif
 void ieee80211_sta_set_buffered(struct ieee80211_sta *pubsta,
 				u8 tid, bool buffered)
 {

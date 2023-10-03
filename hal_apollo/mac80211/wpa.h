@@ -8,7 +8,7 @@
 
 #ifndef WPA_H
 #define WPA_H
-
+#ifdef CONFIG_ATBM_USE_SW_ENC
 #include <linux/skbuff.h>
 #include <linux/types.h>
 #include "ieee80211_i.h"
@@ -32,5 +32,5 @@ ieee80211_tx_result
 ieee80211_crypto_aes_cmac_encrypt(struct ieee80211_tx_data *tx);
 ieee80211_rx_result
 ieee80211_crypto_aes_cmac_decrypt(struct ieee80211_rx_data *rx);
-
+#endif
 #endif /* WPA_H */
