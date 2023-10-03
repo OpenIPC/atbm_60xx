@@ -6,43 +6,50 @@ NOSTDINC_FLAGS := -I$(src)/include/ \
 	-include $(src)/include/linux/compat-2.6.h \
 	-DCOMPAT_STATIC 
 		
-
 KBUILD_CFLAGS += -Wno-error \
 	-Wno-error=vla \
 	-Wno-error=unused-function -fno-common \
-	-Wno-vla
-
-#-g
+	-Wno-vla \
+	-Wno-address-of-packed-member
 
 ifneq ($(ATBM_MAKEFILE_SUB),y)
 export
 ifeq ($(CONFIG_ATBM_MODULE_NAME),)
 CONFIG_ATBM_MODULE_NAME = atbm_wifi
 endif
+
 ifeq ($(CONFIG_ATBM_WIFIIF1_NAME),)
 CONFIG_ATBM_WIFIIF1_NAME = "wlan%d"
 endif
+
 ifeq ($(CONFIG_ATBM_WIFIIF2_NAME),)
 CONFIG_ATBM_WIFIIF2_NAME = "p2p%d"
 endif
+
 ifeq ($(CONFIG_ATBM_USB_VID),)
 CONFIG_ATBM_USB_VID = 0x007a
 endif
+
 ifeq ($(CONFIG_ATBM_USB_PID),)
 CONFIG_ATBM_USB_PID = 0x8888
 endif
+
 ifeq ($(CONFIG_ATBM_MODULE_DRIVER_NAME),)
 CONFIG_ATBM_MODULE_DRIVER_NAME = "atbm_wlan"
 endif
+
 ifeq ($(CONFIG_ATBM_PLATFORM_DEVICE_NAME),)
 CONFIG_ATBM_PLATFORM_DEVICE_NAME = "atbmusbwifi"
 endif
+
 ifeq ($(CONFIG_ATBM_MODULE_PM_STAYAWK),)
 CONFIG_ATBM_PLATFORM_DEVICE_NAME = "pm_stayawake"
 endif
+
 ifeq ($(CONFIG_ATBM_FW_NAME),)
-CONFIG_ATBM_FW_NAME="fw.bin"
+CONFIG_ATBM_FW_NAME = "fw.bin"
 endif
+
 export
 SDIO_HOST      ?= $(shell echo $(CONFIG_ATBM_SDIO_MMCx))
 IF1NAME        ?= $(shell echo $(CONFIG_ATBM_WIFIIF1_NAME))
@@ -89,18 +96,18 @@ DRVLOADERFAST  ?= $(CONFIG_ATBM_FUNC_DRV_LOADER_FAST)
 PRI_IE         ?= $(CONFIG_ATBM_FUNC_PRIVE_IE)
 MONHDRPRISM         ?= $(CONFIG_ATBM_FUNC_MONITOR_HDR_PRISM)
 #############################################################
+
 #ATBM6041 ONLY USE SDIO
 ifeq ($(CONFIG_HERA),y)
 SDIO_BUS=y
 endif
+
 ifeq ($(CONFIG_ATBM_SDIO_24M),y)
 ifeq ($(CONFIG_ATHENAB),y)
 CONFIG_ATHENAB_24M=y
 CONFIG_ATHENAB=n
 endif
 endif
-
 endif
  
 obj-$(CONFIG_ATBM_APOLLO) += hal_apollo/
-

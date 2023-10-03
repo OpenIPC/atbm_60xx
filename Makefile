@@ -1,363 +1,198 @@
+############################################################################
+#			ATBM WiFi Product Select
+#CONFIG_ATBM601x: 1T1R 80211b/g/n, HT20
+#if yout want to change .conf, please do make menuconfig in current path
+############################################################################
+-include $(src)/.config
+
+############################################################################
 #
-#makefile for build atbm_wifi.ko
+#	The Follow Code Of The Makefile Should Not Be Changed 
 #
-###############################################################################
-#
-# when release to customer ,the CUSTOMER_SUPPORT_USED must set to y!!!!!!!!!!!!!
-#
-###############################################################################
-CUSTOMER_SUPPORT_USED=y
-###############################################################################
-#PLATFORM_XUNWEI    		1
-#PLATFORM_SUN6I					2
-#PLATFORM_FRIENDLY			3
-#PLATFORM_SUN6I_64			4
-#PLATFORM_HI3798M				5
-#PLATFORM_HI3518E				6
-#PLATFORM_X86PC         7
-#PLATFORM_AMLOGIC				8
-#PLATFORM_AMLOGIC_905X	9
-#PLATFORM_ROCKCHIP      10
-#PLATFORM_MSTAR					11
-#PLATFORM_CDLINUX				12
-#PLATFORM_AMLOGIC_S805	13
-#PLATFORM_HIS_LINUX_3_4				14
-#PLATFORM_ROCKCHIP_3229				15
-#PLATFORM_ROCKCHIP_3229_ANDROID8		16
-#PLATFORM_HS_IPC				17
-#PLATFORM_SIGMASTAR                           18
-#PLATFORM_HI3516EV200                         19
-#PLATFORM_XUNWEI_2G                            20
-#PLATFORM_NVT98517       21
+############################################################################
+PWD := $(shell pwd)
+WIFI_INSTALL_DIR := $(PWD)/output
+
+NOSTDINC_FLAGS := -I$(src)/include/ \
+	-include $(src)/include/linux/compat-2.6.h \
+	-DCOMPAT_STATIC
+
+#####################################################
 export
-platform ?= PLATFORM_ROCKCHIP
-#Android
-#Linux
-sys ?= Android
-#arch:arm or arm64 or mips(NVT98517)
-arch ?= arm
-#export 
-#ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=$(platform)
-
-ifeq ($(CUSTOMER_SUPPORT_USED),y)
-MAKEFILE_SUB ?= Makefile.build.customer
-else
-MAKEFILE_SUB ?= Makefile.build
+ifeq ($(CONFIG_ATBM_MODULE_NAME),)
+CONFIG_ATBM_MODULE_NAME = atbm_wifi
 endif
 
-
-ifeq ($(platform),PLATFORM_NVT98517)
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-#KERDIR:=/home/xzq/svn_nvt_sdk/new_ipc_sdk/sdk_2.0/98517/6032i/NA51023_BSP_v1.1.1/linux-kernel/OUTPUT
-KERDIR:=/wifi_prj/staff/wangsiyao/baichuan/linux-kernel/OUTPUT/
-CROSS_COMPILE:=/wifi_prj/staff/wangsiyao/baichuan/mipsel-24kec-linux-uclibc-4.9-2017.07/usr/bin/mipsel-24kec-linux-uclibc-
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=21
-arch = mips
+ifeq ($(CONFIG_ATBM_WIFIIF1_NAME),)
+CONFIG_ATBM_WIFIIF1_NAME = "wlan%d"
 endif
 
-
-ifeq ($(KERNELRELEASE),)
-export DRIVER_PATH ?= $(shell pwd)
-ifeq ($(platform),PLATFORM_HS_IPC)
-KERDIR:=/wifi_prj/staff/jilechang/HS_IPC_1115/kernel
-CROSS_COMPILE:=/wifi_prj/staff/jilechang/HS_IPC_1115/opt/arm-anykav200-crosstool/usr/bin/arm-anykav200-linux-uclibcgnueabi-
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=17
-arch = arm
+ifeq ($(CONFIG_ATBM_WIFIIF2_NAME),)
+CONFIG_ATBM_WIFIIF2_NAME = "p2p%d"
 endif
 
-ifeq ($(platform),PLATFORM_ROCKCHIP_3229_ANDROID8)
-ifeq ($(sys),Android)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/rk3328_box_oreo_release_v1.0.0_20180319/kernel
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/rk3328_box_oreo_release_v1.0.0_20180319/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-else
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
+ifeq ($(CONFIG_ATBM_USB_VID),)
+CONFIG_ATBM_USB_VID = 0x007a
 endif
+
+ifeq ($(CONFIG_ATBM_USB_PID),)
+CONFIG_ATBM_USB_PID = 0x8888
+endif
+
+ifeq ($(CONFIG_ATBM_SDIO_VID),)
+CONFIG_ATBM_SDIO_VID = 0x007a
+endif
+
+ifeq ($(CONFIG_ATBM_SDIO_PID),)
+CONFIG_ATBM_SDIO_PID = 0x6011
+endif
+
+ifeq ($(CONFIG_ATBM_MODULE_DRIVER_NAME),)
+CONFIG_ATBM_MODULE_DRIVER_NAME = "atbm_wlan"
+endif
+
+ifeq ($(CONFIG_ATBM_PLATFORM_DEVICE_NAME),)
+CONFIG_ATBM_PLATFORM_DEVICE_NAME = "atbm_dev_wifi"
+endif
+
+ifeq ($(CONFIG_ATBM_MODULE_PM_STAYAWK),)
+CONFIG_ATBM_PLATFORM_DEVICE_NAME = "pm_stayawake"
+endif
+
+ifeq ($(CONFIG_ATBM_FW_NAME),)
+CONFIG_ATBM_FW_NAME="fw.bin"
+endif
+
 export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=10
-arch = arm64
+SDIO_HOST      ?= $(shell echo $(CONFIG_ATBM_SDIO_MMCx))
+IF1NAME        ?= $(shell echo $(CONFIG_ATBM_WIFIIF1_NAME))
+IF2NAME        ?= $(shell echo $(CONFIG_ATBM_WIFIIF2_NAME))
+FW             ?= $(shell echo $(CONFIG_ATBM_FW_NAME))
+MODULES_NAME   ?= $(shell echo $(CONFIG_ATBM_MODULE_NAME))
+USBVID		   ?= $(shell echo $(CONFIG_ATBM_USB_VID))
+USBPID		   ?= $(shell echo $(CONFIG_ATBM_USB_PID))
+SDIOVID			?=$(shell echo $(CONFIG_ATBM_SDIO_VID))
+SDIOPID			?=$(shell echo $(CONFIG_ATBM_SDIO_PID))
+MODDRVNAME	   ?= $(shell echo $(CONFIG_ATBM_MODULE_DRIVER_NAME))
+PLFDEVNAME	   ?= $(shell echo $(CONFIG_ATBM_PLATFORM_DEVICE_NAME))
+MODPMSTAYAWK   ?= $(shell echo $(CONFIG_ATBM_MODULE_PM_STAYAWK))
+
+SAEAUTHEN      ?= $(CONFIG_ATBM_FUNC_SAE_AUTHEN)
+LOAD_FW_H      ?= $(CONFIG_ATBM_USE_FIRMWARE_H)
+SKB_DEBUG      ?= $(CONFIG_ATBM_FUNC_SKB_DEBUG)
+MEM_DEBUG      ?= $(CONFIG_ATBM_FUNC_SKB_DEBUG)
+BRIDGE         ?= $(CONFIG_ATBM_SUPPORT_BRIDGE)
+MONITOR        ?= $(CONFIG_ATBM_FUNC_MONITOR)
+EARLYSUSPEND   ?= $(CONFIG_ATBM_FUNC_EARLYSUSPEND)
+NOTXCONFIRM    ?= $(CONFIG_ATBM_FUNC_NOTXCONFIRM)
+CH5G           ?= $(CONFIG_ATBM_FUNC_CHANNEL_5G_PRETEND_2G)
+ONLY_HT20		?= $(CONFIG_ATBM_WITHBAND_ONLY_HT20)
+USBAGGTX       ?= $(CONFIG_ATBM_FUNC_USB_AGGRTX)
+USBDMABUFF     ?= $(CONFIG_ATBM_FUNC_USB_DMABUFF)
+USBCMDENHANCE  ?= $(CONFIG_ATBM_FUNC_USB_CMD_ENHANCE)
+USBDATAENHANCE ?= $(CONFIG_ATBM_FUNC_USB_DATA_ENHANCE)
+PMRELODDFW     ?= $(CONFIG_ATBM_FUNC_PS_WAKEUP_RELOAD_FW)
+USB_BUS        ?= $(CONFIG_ATBM_USB_BUS)
+SDIO_BUS       ?= $(CONFIG_ATBM_SDIO_BUS)
+SPI_BUS        ?= $(CONFIG_ATBM_SPI_BUS)
+CHECKSUM       ?= $(CONFIG_ATBM_FUNC_HW_CHSUM)
+SWRATECTRL     ?= $(CONFIG_ATBM_SW_RATE_CTRL)
+P2PENABLE      ?= $(CONFIG_ATBM_FUNC_P2P_ENABLE)
+SWENC          ?= $(CONFIG_ATBM_FUNC_SW_ENC)
+MODULEFS       ?= $(CONFIG_ATBM_FUNC_MODULE_FS)
+DEVCTRL        ?= $(CONFIG_ATBM_FUNC_DEV_CTRL_API)
+SMARTCONFIG    ?= $(CONFIG_ATBM_FUNC_SMARTCONFIG)
+CONFIG_ATHENAB ?= $(CONFIG_ATBM601x)$(CONFIG_ATBM602x)
+CONFIG_ARESB   ?= $(CONFIG_ATBM603x)
+CONFIG_HERA    ?= $(CONFIG_ATBM6041)
+NEED_SCOND_INTERFACE ?= $(CONFIG_NEED_P2P0_INTERFACE)
+CUSTORMSPECIAL ?= y
+CONFIG_NOT_SUPPORT_40M_CHW ?= $(CONFIG_ATBM601x)
+DRVLOADERFAST  ?= $(CONFIG_ATBM_FUNC_DRV_LOADER_FAST)
+PRI_IE         ?= $(CONFIG_ATBM_FUNC_PRIVE_IE)
+MONHDRPRISM         ?= $(CONFIG_ATBM_FUNC_MONITOR_HDR_PRISM)
+
+##################################################
+#ATBM6041 only use SDIO
+ifeq ($(CONFIG_HERA),y)
+SDIO_BUS=y
 endif
 
-ifeq ($(platform),PLATFORM_ROCKCHIP_3229)
-ifeq ($(sys),Android)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/rockchip_3229_kernel/kernel/
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/rockchip_3229_kernel/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
-else
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
+ifeq ($(CONFIG_ATBM_SDIO_24M),y)
+ifeq ($(CONFIG_ATHENAB),y)
+CONFIG_ATHENAB_24M=y
+CONFIG_ATHENAB=n
 endif
+endif
+
+MULT_NAME=y
+ATBM_MAKEFILE_SUB=y
+
+#####################################################
 export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=10
+ifeq ($(CONFIG_ATBM_APOLLO),)
+CONFIG_ATBM_APOLLO=m
 endif
-ifeq ($(platform),PLATFORM_HIS_LINUX_3_4)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/his_liux3_4/linux-3.4.y/
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/his_liux3_4/arm-hisiv300-linux/bin/arm-hisiv300-linux-uclibcgnueabi-
-arch = arm
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=14
-endif
-ifeq ($(platform),PLATFORM_MSTAR)
-ifeq ($(sys),Linux)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/mstar/linux3.18_i3/
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/mstar/arm-linux-gnueabihf-4.8.3-201404/bin/arm-linux-gnueabihf-
-else
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-endif
+
+############################################
 export
-arch = arm
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=11
-endif
+-include $(src)/Makefile.build.kernel
 
-ifeq ($(platform),PLATFORM_SIGMASTAR)
-ifeq ($(sys),Linux)
-KERDIR:=/usr/lchome/yuzhihuang/Mstar/IPC_I3/linux3.18_i3/
-CROSS_COMPILE:=/usr/lchome/yuzhihuang/Mstar/IPC_I3/arm-linux-gnueabihf-4.8.3-201404/bin/arm-linux-gnueabihf-
-else
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-#KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-#CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-endif
 export
-arch = arm
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=18
+ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=31
+
+export DRIVER_PATH ?= $(PWD)
+
+################### WIRELESS #########################
+ifeq ($(USB_BUS),y)
+HIF := usb
 endif
 
-
-ifeq ($(platform),PLATFORM_ROCKCHIP)
-ifeq ($(sys),Android)
-KERDIR:=/usr/lchome/lishicheng/rk/kernel
-CROSS_COMPILE:=arm-rockchip830-linux-uclibcgnueabihf-
-else
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-endif
-export
-arch = arm
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=10 
+ifeq ($(SDIO_BUS),y)
+HIF := sdio
 endif
 
-#
-#xunwei platform params
-#
-ifeq ($(platform),PLATFORM_XUNWEI)
-ifeq ($(sys),Android)
-#KERDIR:=/wifi_prj/zhouzhanchao/android4_4_2/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/wuping/project/android4_4_2/iTop4412_Kernel_3.0
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-else
-#KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/staff/panxuqiang/wifi_prj/iTop4412_Kernel_3.0/
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-#KERDIR:=/wifi_prj/staff/jilechang/XUNWEI/iTop4412_Kernel_3.0/
-#CROSS_COMPILE:=/wifi_prj/staff/jilechang/XUNWEI/arm-2009q3/bin/arm-none-linux-gnueabi-
-
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=1
-endif
-ifeq ($(platform),PLATFORM_XUNWEI_2G)
-ifeq ($(sys),Android)
-#KERDIR:=/wifi_prj/zhouzhanchao/android4_4_2/iTop4412_Kernel_3.0/
-KERDIR:=/wifi_prj/wuping/project/android4_4_2/iTop4412_Kernel_3.0
-CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-else
-#KERDIR:=/wifi_prj/wuping/project/linux/iTop4412_Kernel_3.0/
-#KERDIR:=/wifi_prj/staff/panxuqiang/wifi_prj/iTop4412_Kernel_3.0/
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/iTop4412_Kernel_3.0/
-#CROSS_COMPILE:=/usr/local/arm/arm-2009q3/bin/arm-none-linux-gnueabi-
-KERDIR:=/wifi_prj/staff/jilechang/XUNWEI/iTop4412_Kernel_3.0/
-CROSS_COMPILE:=/wifi_prj/staff/jilechang/XUNWEI/arm-2009q3/bin/arm-none-linux-gnueabi-
-
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=20
+ifeq ($(SPI_BUS),y)
+HIF := spi
 endif
 
-#
-#allwinner 32 platform params
-#
-ifeq ($(platform),PLATFORM_SUN6I)
-ifeq ($(sys),Android)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/android4_4_SIN/Source/lichee/linux-3.3
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/android4_4_SIN/Source/lichee/brandy/gcc-linaro/bin/arm-linux-gnueabi-
-else
-KERDIR:=/wifi_prj/staff/zhouzhanchao/Linux_sun6i/lichee/linux-3.3/
-#KERDIR:=/wifi_prj/staff/panxuqiang/wifi_prj/branch/linux_sun6i/
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/Linux_sun6i/lichee/buildroot/output/external-toolchain/bin/arm-linux-gnueabi-
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=2
-endif
+all: get_ver modules install
 
-#
-#allwinner 64 platform params
-#
-ifeq ($(platform),PLATFORM_SUN6I_64)
-ifeq ($(sys),Android)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/android6_0_SIN/cqa64_android_v6.0/lichee/linux-3.10/
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/android6_0_SIN/cqa64_android_v6.0/lichee/out/sun50iw1p1/android/common/buildroot/external-toolchain/bin/aarch64-linux-gnu-
-else
-KERDIR:=/wifi_prj/staff/panxuqiang/64bi_driver/cqa64_linux_qt5.3.2/lichee/linux-3.10/
-CROSS_COMPILE:=/wifi_prj/staff/panxuqiang/64bi_driver/cqa64_linux_qt5.3.2/lichee/brandy/armv8_toolchain/gcc-linaro-aarch64-linux-gnu-4.9-2014.09_linux/bin/aarch64-linux-gnu-
-endif
-arch:=arm64
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=4
-endif
-
-#
-#HI3798M platform params
-#
-ifeq ($(platform),PLATFORM_HI3798M)
-ifeq ($(sys),Android)
-KERDIR:=/ssd-home/zhouzhanchao/Hi3798M-60-2/Hi3798M-60/out/target/product/Hi3798MV100/obj/KERNEL_OBJ/
-CROSS_COMPILE:=/opt/hisi-linux/x86-arm/arm-hisiv200-linux/target/bin/arm-hisiv200-linux-
-else
-#KERDIR:=/wifi_prj/staff/panxuqiang/64bi_driver/cqa64_linux_qt5.3.2/lichee/linux-3.10/
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=5
-endif
-
-ifeq ($(platform),PLATFORM_PCX86)
-KERDIR:=/kernel/linux-lts-utopic-3.16.0/
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=7
-arch:=x86
-MAKEFILE_SUB = Makefile.build.local
-endif
-ifeq ($(platform),PLATFORM_AMLOGIC)
-ifeq ($(sys),Android)
-#KERDIR:=/wifi_prj/staff/zhouzhanchao/amlogic/release_s905_l/out/target/product/p200/obj/KERNEL_OBJ/
-KERDIR:=/wifi_prj/staff/mengxuehong/s905l/S905L/out/target/product/p201_iptv/obj/KERNEL_OBJ/
-CROSS_COMPILE:=/ssd-home/mengxuehong/buildTool1/gcc-linaro-aarch64-linux-gnu-4.9-2014.09_linux/bin/aarch64-linux-gnu-
-else
-#KERDIR:=/wifi_prj/staff/panxuqiang/64bi_driver/cqa64_linux_qt5.3.2/lichee/linux-3.10/
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=8
-arch:=arm64
-endif
-
-
-ifeq ($(platform),PLATFORM_AMLOGIC_S805)
-ifeq ($(sys),Android)
-KERDIR:=/wifi_prj/staff/zhouzhanchao/s805_env/KERNEL_OBJ/
-CROSS_COMPILE:=/wifi_prj/staff/zhouzhanchao/s805_env/opt/gcc-linaro-arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
-else
-#KERDIR:=/wifi_prj/staff/panxuqiang/64bi_driver/cqa64_linux_qt5.3.2/lichee/linux-3.10/
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=8
-arch:=arm
-endif
-
-ifeq ($(platform),PLATFORM_AMLOGIC_905X)
-ifeq ($(sys),Android)
-KERDIR=/wifi_prj/staff/mengxuehong/mengxuehong/aml0804/n-amlogic_0804/out/target/product/p281/obj/KERNEL_OBJ
-#KERDIR:=/wifi_prj/staff/mengxuehong/mengxuehong/amlogic_sdk/release_s905_l/out/target/product/p201/obj/KERNEL_OBJ/
-CROSS_COMPILE:=/wifi_prj/staff/mengxuehong/mengxuehong/amlogic_sdk/buildTool/gcc-linaro-aarch64-linux-gnu-4.9-2014.09_linux/bin/aarch64-linux-gnu-
-else
-#KERDIR:=/wifi_prj/staff/panxuqiang/64bi_driver/cqa64_linux_qt5.3.2/lichee/linux-3.10/
-endif
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=9
-arch:=arm64
-endif
-
-ifeq ($(platform),PLATFORM_HI3516EV200)
-KERDIR:=/wifi_prj/staff/panxuqiang/wifi_prj/Hi3516EV200_SDK_V1.0.0.2/osdrv/opensource/kernel/linux-4.9.y
-CROSS_COMPILE:=/opt/hisi-linux/x86-arm/arm-himix100-linux/bin/arm-himix100-linux-
-export 
-arch = arm
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=19
-#ATBM_WIFI__EXT_CCFLAGS += -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4 -fno-aggressive-loop-optimizations
-endif
-
-ifeq ($(platform),PLATFORM_PCX86)
-all:install
-
-install:
-	@echo "make PLATFORM_PCX86"
-	$(MAKE) all -f Makefile.build.local KDIR=$(KERDIR)
-clean:
-	$(MAKE) -f Makefile.build.local KDIR=$(KERDIR) clean
-else
-all:install
-
-install:
-	@echo "make PLATFORM_CROSS=$(platform)"
-	#$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERNEL_DIR) M=$(shell pwd) modules -j12
-	$(MAKE) all -f $(MAKEFILE_SUB) ARCH=$(ARCH)  CROSS_COMPILE=$(CROSS_COMPILE) KDIR=$(KERNEL_DIR) SYS=$(sys) PLAT=$(platform) -j8
-	arm-rockchip830-linux-uclibcgnueabihf-strip --strip-debug $(shell pwd)/driver_install/atbm603x_.ko
-	cp $(shell pwd)/driver_install/atbm603x_.ko $(M_OUT_DIR)
-clean:
-	$(MAKE) -f $(MAKEFILE_SUB) KDIR=$(KERDIR) ARCH=$(arch) clean
-strip:	
-	$(MAKE) -f $(MAKEFILE_SUB) KDIR=$(KERDIR) ARCH=$(arch) SYS=$(sys) PLAT=$(platform) strip
 get_ver:
-	$(MAKE) -f $(MAKEFILE_SUB) KDIR=$(KERDIR) ARCH=$(arch) SYS=$(sys) PLAT=$(platform) get_ver
-buid_config:
+	@echo "**************************************"
+	@echo "driver version"
+	@cat hal_apollo/svn_version.h | awk '{print $3}'
+	@echo "**************************************"
+
+modules: clean
+	@echo "arch=$(ARCH)"						
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KSRC) M=$(shell pwd) modules
+
+strip:
+	$(CROSS_COMPILE)strip $(WIFI_INSTALL_DIR)/$(MODULES_NAME).ko --strip-unneeded
+
+menuconfig:
 	$(MAKE) -C atbm_kconf clean
 	$(MAKE) -C atbm_kconf mconf -f Makefile
-menuconfig:buid_config
-	@./atbm_kconf/mconf ./atbm_kconf/Kconfig
-endif
-else
-ifeq ($(platform),PLATFORM_XUNWEI)
-export 
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=1
-endif
-ifeq ($(platform),PLATFORM_SUN6I)
-export 
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=2
-endif
-ifeq ($(platform),PLATFORM_SUN6I_64)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=4
-endif
-ifeq ($(platform),PLATFORM_HI3798M)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=5
-endif
-ifeq ($(platform),PLATFORM_AMLOGIC)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=8
-endif
-ifeq ($(platform),PLATFORM_AMLOGICi_905X)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=9
-endif
-ifeq ($(platform),PLATFORM_ROCKCHIP)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=10
-endif
-ifeq ($(platform),PLATFORM_MSTAR)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=11
-endif
-ifeq ($(platform),PLATFORM_CDLINUX)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=12
-endif
-ifeq ($(platform),PLATFORM_AMLOGIC_S805)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=13
-endif
-ifeq ($(platform),PLATFORM_ROCKCHIP_3229)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=10
-endif
-ifeq ($(platform),PLATFORM_NVT98517)
-export
-ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=14
-endif
-export 
-include $(src)/Makefile.build.kernel
-endif
+	@atbm_kconf/mconf atbm_kconf/Kconfig
 
+install: modules
+	mkdir -p $(WIFI_INSTALL_DIR)
+	chmod 777 $(WIFI_INSTALL_DIR)
+	cp hal_apollo/*.ko $(WIFI_INSTALL_DIR)
+
+clean: hal_clean
+	rm -rf hal_apollo/*.o
+	rm -rf hal_apollo/*.ko  
+	rm -rf modules.* Module.* 
+
+hal_clean:
+	rm -rf hal_apollo/*.ko
+	rm -rf hal_apollo/*.o
+	rm -rf hal_apollo/*.mod.c
+	rm -rf hal_apollo/*.cmd
+	rm -rf hal_apollo/.*.cmd
+	rm -rf hal_apollo/mac80211/*.cmd
+	rm -rf hal_apollo/mac80211/.*.cmd
+	rm -rf hal_apollo/mac80211/*.o
+	rm -rf driver_install/*.ko

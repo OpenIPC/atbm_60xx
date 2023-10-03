@@ -88,6 +88,11 @@ extern int sunxi_wlan_get_bus_index(void);
 //extern int sunxi_wlan_get_oob_irq(void);
 //extern unsigned int oob_irq;
 #endif
+
+#if (ATBM_WIFI_PLATFORM == 31)
+#define PLATFORMINF "ingenic"
+#endif
+
 #ifndef PLATFORMINF
 #define PLATFORMINF		"no platform"
 #endif

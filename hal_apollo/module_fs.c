@@ -3650,7 +3650,7 @@ static ssize_t atbm_module_show_backup_info(struct kobject *kobj,
 		goto exit;
 	 }
 	 hw_priv = atbm_hw_priv_dereference();
-#ifdef CONFIG_TXPOWER_DCXO_VALUE || CONFIG_RATE_TXPOWER
+#if defined CONFIG_TXPOWER_DCXO_VALUE || defined CONFIG_RATE_TXPOWER
 	 if ((ret = wsm_get_cfg_txpower(hw_priv, (void *)&configured_txpower, sizeof(configured_txpower))) == 0){	 
 		 for(i=0;i<sizeof(configured_txpower.set_txpwr_delta_gain);i++)
 			 atbm_module_show_put(&sys_show,"delta_gain%d:%d\n",i+1,configured_txpower.set_txpwr_delta_gain[i]);
