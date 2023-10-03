@@ -49,20 +49,20 @@ static int driver_build_info(void)
 	else
 		build.dpll=26;
 	memcpy(build.driver_info,(void*)DRIVER_INFO,sizeof(DRIVER_INFO));
-	printk("SVN_VER=%d,DPLL_CLOCK=%d,BUILD_TIME=%s\n",build.ver,build.dpll,build.driver_info);
+	atbm_printk_init("SVN_VER=%d,DPLL_CLOCK=%d,BUILD_TIME=%s\n",build.ver,build.dpll,build.driver_info);
 
 #if (OLD_RATE_POLICY==0)
-	printk("----drvier RATEPOLCIY=NEW\n");
+	atbm_printk_init("----drvier RATEPOLCIY=NEW\n");
 #else
-	printk("----drvier RATEPOLCIY=OLD\n");
+	atbm_printk_init("----drvier RATEPOLCIY=OLD\n");
 #endif
 
 #if (PROJ_TYPE==APOLLO_1601)
-	printk("----drvier support chip APOLLOB 1601\n");
+	atbm_printk_init("----drvier support chip APOLLOB 1601\n");
 #elif (PROJ_TYPE==APOLLO_1606)
-	printk("----drvier support chip APOLLOB 1606\n");
+	atbm_printk_init("----drvier support chip APOLLOB 1606\n");
 #elif (PROJ_TYPE==APOLLO_C)
-	printk("----drvier support chip APOLLOC \n");
+	atbm_printk_init("----drvier support chip APOLLOC \n");
 #endif
 
 	return 0;
@@ -365,7 +365,7 @@ void atbm_spi_read_rdy_start(void)
 			return;
 		atomic_set(&g_wtd.wtd_spi_read_ready, 1);
 		wake_up(&g_wtd.wtd_evt_wq);
-		printk( "[atbm_wtd] wakeup.\n");
+		atbm_printk_bus("[atbm_wtd] wakeup.\n");
 #endif //CONFIG_ATBMWIFI_WDT
 }
 
@@ -386,7 +386,7 @@ void atbm_spi_status_rx_ready(struct atbm_common *priv)
 	BUG_ON(!priv->sbus_ops);
 
 	ret = atbm_spi_read_ready(priv->sbus_priv, &ready);
-	printk("[wtd] ready %d\n", ready);
+	atbm_printk_bus("[wtd] ready %d\n", ready);
 	if ((ready == 1))
 	{
 		if (atomic_add_return(1, &priv->bh_rx) == 1){
@@ -404,14 +404,10 @@ void atbm_wtd_wakeup( struct sbus_priv *self)
 	if(atomic_read(&self->wtd->wtd_term))
 		return;
 	atomic_set(&g_wtd.wtd_run, 1);
-	printk( "[atbm_wtd] wakeup.\n");
+	atbm_printk_bus( "[atbm_wtd] wakeup.\n");
 	wake_up(&self->wtd->wtd_evt_wq);
 #endif //CONFIG_ATBMWIFI_WDT
 }
-#ifdef RESET_CHANGE
-extern struct atbm_common *g_hw_priv;
-extern int atbm_reset_driver(struct atbm_common *hw_priv);
-#endif
 static int atbm_wtd_process(void *arg)
 {
 #ifdef CONFIG_ATBMWIFI_WDT
@@ -421,10 +417,7 @@ static int atbm_wtd_process(void *arg)
 	int waittime = 20;
 	int wtd_probe=0;
 	int spi_read_ready = 0;
-#ifdef RESET_CHANGE
-	int err;
-#endif
-	printk("[atbm_wtd]:atbm_wtd_process start++\n");
+	atbm_printk_bus("[atbm_wtd]:atbm_wtd_process start++\n");
 
 	while(1){
 		status = wait_event_interruptible(g_wtd.wtd_evt_wq, ({
@@ -433,7 +426,7 @@ static int atbm_wtd_process(void *arg)
 				spi_read_ready = atomic_read(&g_wtd.wtd_spi_read_ready);
 				(term || wtd_run || spi_read_ready);}));
 		if (status < 0 || term ){
-			printk("[atbm_wtd]:1 thread break %d %d\n",status,term);
+			atbm_printk_exit("[atbm_wtd]:1 thread break %d %d\n",status,term);
 			goto __stop;
 		}
 		
@@ -450,59 +443,27 @@ static int atbm_wtd_process(void *arg)
 				msleep(1000);
 			}while(atomic_read(&g_wtd.wtd_spi_read_ready));
 			
-			printk("[atbm_wtd]:atbm_spi_status_rx_ready end++\n");
+			atbm_printk_exit("[atbm_wtd]:atbm_spi_status_rx_ready end++\n");
 			continue;
 		}
 		
 		atomic_set(&g_wtd.wtd_run, 0);
-
-#ifndef RESET_CHANGE
-		printk("[atbm_wtd]:atbm_spi_exit++\n");
-		atbm_spi_exit();
-		msleep(2000);
-		printk("[atbm_wtd]:atbm_spi_init++\n");
-		atbm_spi_init();
-		printk("[atbm_wtd]:atbm_spi_init--\n");
-		//wait 10s for spi init ok,
-		while(waittime-- >0){
-			msleep(500);
-			term = atomic_read(&g_wtd.wtd_term);
-			if(term) {
-				printk("[atbm_wtd]:2 thread break %d %d\n",status,term);
-				goto __stop;
-			}
-			wtd_probe = atomic_read(&g_wtd.wtd_probe);
-			if(wtd_probe != 0){
-				printk("[atbm_wtd]:wtd_probe(%d) have done\n",wtd_probe);
-				break;
-			}
+		do
+		{
+			/*
+			*must make sure that g_hw_priv->bh_error is 0 when hmac is
+			*in reset state,but........
+			*/
+			atbm_hw_priv_dereference()->bh_error = 0;
+			err = atbm_reset_driver(atbm_hw_priv_dereference());
+			mdelay(5);
 		}
-		waittime = 10;
-		//check if spi init ok?
-		wtd_probe = atomic_read(&g_wtd.wtd_probe);
-		//if spi init have probem, need call wtd again
-		if(wtd_probe != 1){
-			atomic_set(&g_wtd.wtd_run, 1);
-			printk("[atbm_wtd]:wtd_run again\n");
-		}
-#else
-	do
-	{
-		/*
-		*must make sure that g_hw_priv->bh_error is 0 when hmac is
-		*in reset state,but........
-		*/
-		atbm_hw_priv_dereference()->bh_error = 0;
-		err = atbm_reset_driver(atbm_hw_priv_dereference());
-		mdelay(5);
-	}
 	while(err == -1);
-#endif
 	}
 __stop:
 	while(term){
 		
-		printk("[atbm_wtd]:kthread_should_stop\n");
+		atbm_printk_bus("[atbm_wtd]:kthread_should_stop\n");
 		if(kthread_should_stop()){
 			break;
 		}
@@ -518,7 +479,7 @@ static void atbm_wtd_init(void)
 	struct sched_param param = { .sched_priority = 1 };
 	if(g_wtd.wtd_init)
 		return;
-	printk( "[wtd] register.\n");
+	atbm_printk_init( "[wtd] register.\n");
 	init_waitqueue_head(&g_wtd.wtd_evt_wq);
 	atomic_set(&g_wtd.wtd_term, 0);
 	g_wtd.wtd_thread = kthread_create(&atbm_wtd_process, &g_wtd, "atbm_wtd");
@@ -545,7 +506,7 @@ static void atbm_wtd_exit(void)
 	if(atomic_read(&g_wtd.wtd_term)==0)
 		return;
 	g_wtd.wtd_thread = NULL;
-	printk( "[wtd] unregister.\n");
+	atbm_printk_exit("[wtd] unregister.\n");
 	atomic_add(1, &g_wtd.wtd_term);
 	wake_up(&g_wtd.wtd_evt_wq);
 	kthread_stop(thread);
@@ -608,7 +569,7 @@ static int  atbm_spi_probe(struct spi_device *spi)
 	self->core = g_wtd.core;
 
 	atomic_set(&g_wtd.wtd_probe, 1);
-	printk("[atbm_wtd]:set wtd_probe = 1\n");	
+	atbm_printk_init("[atbm_wtd]:set wtd_probe = 1\n");	
 	spi_set_drvdata(spi, self);
 	return 0;
 	
@@ -658,7 +619,7 @@ static struct spi_driver spi_driver = {
 static int atbm_reboot_notifier(struct notifier_block *nb,
 				unsigned long action, void *unused)
 {
-	printk(KERN_ERR "atbm_reboot_notifier\n");
+	atbm_printk_exit("atbm_reboot_notifier\n");
 	atomic_set(&g_wtd.wtd_term, 1);
 	atomic_set(&g_wtd.wtd_run, 0);
 	atbm_spi_exit();

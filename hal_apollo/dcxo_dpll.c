@@ -1398,7 +1398,7 @@ static int atbm_write_dpll_value_to_smu(struct atbm_common *hw_priv,u32 register
 	u8 getData=0;
 	u32 sys_dpll_smu_reg;
 	ret=atbm_ahb_read_32(hw_priv,register_addr,&sys_dpll_smu_reg);
-	printk(" register_addr=%x,default_value=%x\n",register_addr,sys_dpll_smu_reg);
+	atbm_printk_bus(" register_addr=%x,default_value=%x\n",register_addr,sys_dpll_smu_reg);
 	switch (register_addr){
 		case 0x16101018:
 			atbm_smu_reg_clear_bit(hw_priv,&sys_dpll_smu_reg,0,2);
@@ -1409,7 +1409,7 @@ static int atbm_write_dpll_value_to_smu(struct atbm_common *hw_priv,u32 register
 			getData=atbm_dpll_reg_get_bit(hw_priv,&dpll_regdata_tbl[7],58,63);
 			sys_dpll_smu_reg|=getData<<8;
 			
-			printk("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
+			atbm_printk_bus("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
 			break;
 		case 0x1610101c:
 			atbm_smu_reg_clear_bit(hw_priv,&sys_dpll_smu_reg,0,5);
@@ -1433,7 +1433,7 @@ static int atbm_write_dpll_value_to_smu(struct atbm_common *hw_priv,u32 register
 			atbm_smu_reg_clear_bit(hw_priv,&sys_dpll_smu_reg,24,26);
 			getData=atbm_dpll_reg_get_bit(hw_priv,&dpll_regdata_tbl[5],44,46);
 			sys_dpll_smu_reg|=getData<<24;
-			printk("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
+			atbm_printk_bus("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
 			break;
 			
 		case 0x16101020:
@@ -1452,7 +1452,7 @@ static int atbm_write_dpll_value_to_smu(struct atbm_common *hw_priv,u32 register
 			atbm_smu_reg_clear_bit(hw_priv,&sys_dpll_smu_reg,24,31);
 			getData=atbm_dpll_reg_get_bit(hw_priv,&dpll_regdata_tbl[10],80,87);
 			sys_dpll_smu_reg|=getData<<24;
-			printk("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
+			atbm_printk_bus("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
 			break;
 		case 0x16101024:
 			atbm_smu_reg_clear_bit(hw_priv,&sys_dpll_smu_reg,0,15);
@@ -1488,10 +1488,10 @@ static int atbm_write_dpll_value_to_smu(struct atbm_common *hw_priv,u32 register
 			sys_dpll_smu_reg|=getData<<14;
 			getData=atbm_dpll_reg_get_bit(hw_priv,&dpll_regdata_tbl[1],15,15);
 			sys_dpll_smu_reg|=getData<<15;
-			printk("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
+			atbm_printk_bus("register_addr=%x,change_value=%x\n",register_addr,sys_dpll_smu_reg);
 			break;
 		default:
-			printk("invalid regaddr=%x\n",register_addr);
+			atbm_printk_bus("invalid regaddr=%x\n",register_addr);
 			break;
 		}
 	
@@ -1506,7 +1506,7 @@ static int atbm_write_dcxo_value_to_smu(struct atbm_common *hw_priv,u32 register
 	u8 getData=0;
 	u32 sys_dcxo_smu_reg;
 	ret=atbm_ahb_read_32(hw_priv,register_addr,&sys_dcxo_smu_reg);
-	printk(" register_addr=%x,default_value=%x\n",register_addr,sys_dcxo_smu_reg);
+	atbm_printk_bus(" register_addr=%x,default_value=%x\n",register_addr,sys_dcxo_smu_reg);
 	switch (register_addr){
 		case 0x1610100c:
 			/*smu dcxo trim*/
@@ -1526,7 +1526,7 @@ static int atbm_write_dcxo_value_to_smu(struct atbm_common *hw_priv,u32 register
 			
 			getData=atbm_dpll_reg_get_bit(hw_priv,&dcxo_regdata_tbl[5],40,46);
 			sys_dcxo_smu_reg|=getData<<15;
-			printk("register_addr=%x,change_value=%x\n",register_addr,sys_dcxo_smu_reg);
+			atbm_printk_bus("register_addr=%x,change_value=%x\n",register_addr,sys_dcxo_smu_reg);
 			break;
 		case 0x16101010:
 			/*smu dcxo ctrl*/
@@ -1565,10 +1565,10 @@ static int atbm_write_dcxo_value_to_smu(struct atbm_common *hw_priv,u32 register
 			
 			getData=atbm_dpll_reg_get_bit(hw_priv,&dcxo_regdata_tbl[0],4,4);
 			sys_dcxo_smu_reg|=getData<<15;
-			printk("register_addr=%x,change_value=%x\n",register_addr,sys_dcxo_smu_reg);
+			atbm_printk_bus("register_addr=%x,change_value=%x\n",register_addr,sys_dcxo_smu_reg);
 			break;
 		default:
-			printk("dcxo reg is invalid address=%x\n",register_addr);
+			atbm_printk_bus("dcxo reg is invalid address=%x\n",register_addr);
 			break;
 	}
 	ret=atbm_ahb_write_32(hw_priv,register_addr,sys_dcxo_smu_reg);

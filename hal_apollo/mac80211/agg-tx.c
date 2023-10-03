@@ -88,7 +88,7 @@ static void ieee80211_send_addba_request(struct ieee80211_sub_if_data *sdata,
 
 	atbm_skb_put(skb, 1 + sizeof(mgmt->u.action.u.addba_req));
 
-	mgmt->u.action.category = WLAN_CATEGORY_BACK;
+	mgmt->u.action.category = ATBM_WLAN_CATEGORY_BACK;
 	mgmt->u.action.u.addba_req.action_code = WLAN_ACTION_ADDBA_REQ;
 
 	mgmt->u.action.u.addba_req.dialog_token = dialog_token;
@@ -143,7 +143,7 @@ void ieee80211_assign_tid_tx(struct sta_info *sta, int tid,
 	rcu_assign_pointer(sta->ampdu_mlme.tid_tx[tid], tid_tx);
 }
 
-#if ((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,40)) || ((ATBM_ALLOC_MEM_DEBUG == 1)))
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,40)) || (defined (ATBM_ALLOC_MEM_DEBUG)))
 static void kfree_tid_tx(struct rcu_head *rcu_head)
 {
 	struct tid_ampdu_tx *tid_tx =
@@ -181,10 +181,10 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 		/* not even started yet! */
 		ieee80211_assign_tid_tx(sta, tid, NULL);
 		spin_unlock_bh(&sta->lock);
-#if ((ATBM_ALLOC_MEM_DEBUG == 0) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,40)))
-		kfree_rcu(tid_tx, rcu_head);
-#else
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,40)) || (defined (ATBM_ALLOC_MEM_DEBUG)))
 		call_rcu(&tid_tx->rcu_head, kfree_tid_tx);
+#else
+		kfree_rcu(tid_tx, rcu_head);
 #endif
 		return 0;
 	}
@@ -194,11 +194,11 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 	spin_unlock_bh(&sta->lock);
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "Tx BA session stop requested for %pM tid %u\n",
+	atbm_printk_agg("Tx BA session stop requested for %pM tid %u\n",
 	       sta->sta.addr, tid);
 #endif /* CONFIG_MAC80211_ATBM_HT_DEBUG */
 
-	del_timer_sync(&tid_tx->addba_resp_timer);
+	atbm_del_timer_sync(&tid_tx->addba_resp_timer);
 
 	/*
 	 * After this packets are no longer handed right through
@@ -262,7 +262,7 @@ static void sta_addba_resp_timer_expired(unsigned long data)
 	    test_bit(HT_AGG_STATE_RESPONSE_RECEIVED, &tid_tx->state)) {
 		rcu_read_unlock();
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "timer expired on tid %d but we are not "
+		atbm_printk_agg( "timer expired on tid %d but we are not "
 				"(or no longer) expecting addBA response there\n",
 			tid);
 #endif
@@ -270,7 +270,7 @@ static void sta_addba_resp_timer_expired(unsigned long data)
 	}
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "addBA response timer expired on tid %d\n", tid);
+	atbm_printk_agg("addBA response timer expired on tid %d\n", tid);
 #endif
 
 	ieee80211_stop_tx_ba_session(&sta->sta, tid);
@@ -381,7 +381,7 @@ void ieee80211_tx_ba_session_handle_start(struct sta_info *sta, int tid)
 			       &sta->sta, tid, &start_seq_num, 0);
 	if (ret) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "BA request denied - HW unavailable for"
+		atbm_printk_agg("BA request denied - HW unavailable for"
 					" tid %d\n", tid);
 #endif
 		spin_lock_bh(&sta->lock);
@@ -389,19 +389,18 @@ void ieee80211_tx_ba_session_handle_start(struct sta_info *sta, int tid)
 		ieee80211_assign_tid_tx(sta, tid, NULL);
 		ieee80211_agg_splice_finish(sdata, tid);
 		spin_unlock_bh(&sta->lock);
-
-#if ((ATBM_ALLOC_MEM_DEBUG == 0) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,40)))
-		kfree_rcu(tid_tx, rcu_head);
-#else
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,40)) || (defined (ATBM_ALLOC_MEM_DEBUG)))
 		call_rcu(&tid_tx->rcu_head, kfree_tid_tx);
+#else
+		kfree_rcu(tid_tx, rcu_head);
 #endif
 		return;
 	}
 
 	/* activate the timer for the recipient's addBA response */
-	mod_timer(&tid_tx->addba_resp_timer, jiffies + ADDBA_RESP_INTERVAL);
+	atbm_mod_timer(&tid_tx->addba_resp_timer, jiffies + ADDBA_RESP_INTERVAL);
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "activated addBA response timer on tid %d\n", tid);
+	atbm_printk_agg( "activated addBA response timer on tid %d\n", tid);
 #endif
 
 	spin_lock_bh(&sta->lock);
@@ -435,7 +434,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 		return -EINVAL;
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "Open BA session requested for %pM tid %u\n",
+	atbm_printk_agg("Open BA session requested for %pM tid %u\n",
 	       pubsta->addr, tid);
 #endif /* CONFIG_MAC80211_ATBM_HT_DEBUG */
 
@@ -452,7 +451,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 
 	if (test_sta_flag(sta, WLAN_STA_BLOCK_BA)) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "BA sessions blocked. "
+		atbm_printk_agg("BA sessions blocked. "
 		       "Denying BA session request\n");
 #endif
 		return -EINVAL;
@@ -470,7 +469,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 	/* check if the TID is not in aggregation flow already */
 	if (tid_tx || sta->ampdu_mlme.tid_start_tx[tid]) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "BA request denied - session is not "
+		atbm_printk_agg("BA request denied - session is not "
 				 "idle on tid %u\n", tid);
 #endif /* CONFIG_MAC80211_ATBM_HT_DEBUG */
 		ret = -EAGAIN;
@@ -492,7 +491,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 	/* Tx timer */
 	tid_tx->addba_resp_timer.function = sta_addba_resp_timer_expired;
 	tid_tx->addba_resp_timer.data = (unsigned long)&sta->timer_to_tid[tid];
-	init_timer(&tid_tx->addba_resp_timer);
+	atbm_init_timer(&tid_tx->addba_resp_timer);
 
 	/* assign a dialog token */
 	sta->ampdu_mlme.dialog_token_allocator++;
@@ -523,7 +522,7 @@ static void ieee80211_agg_tx_operational(struct ieee80211_local *local,
 	tid_tx = rcu_dereference_protected_tid_tx(sta, tid);
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "Aggregation is on for tid %d\n", tid);
+	atbm_printk_agg("Aggregation is on for tid %d\n", tid);
 #endif
 
 	drv_ampdu_action(local, sta->sdata,
@@ -559,7 +558,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u16 tid)
 
 	if (tid >= STA_TID_NUM) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "Bad TID value: tid = %d (>= %d)\n",
+		atbm_printk_agg("Bad TID value: tid = %d (>= %d)\n",
 				tid, STA_TID_NUM);
 #endif
 		return;
@@ -570,7 +569,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u16 tid)
 	if (!sta) {
 		mutex_unlock(&local->sta_mtx);
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "Could not find station: %pM\n", ra);
+		atbm_printk_agg("Could not find station: %pM\n", ra);
 #endif
 		return;
 	}
@@ -580,7 +579,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u16 tid)
 
 	if (WARN_ON(!tid_tx)) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "addBA was not requested!\n");
+		atbm_printk_agg("addBA was not requested!\n");
 #endif
 		goto unlock;
 	}
@@ -682,14 +681,14 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 
 	if (tid >= STA_TID_NUM) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "Bad TID value: tid = %d (>= %d)\n",
+		atbm_printk_agg("Bad TID value: tid = %d (>= %d)\n",
 				tid, STA_TID_NUM);
 #endif
 		return;
 	}
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "Stopping Tx BA session for %pM tid %d\n",
+	atbm_printk_agg("Stopping Tx BA session for %pM tid %d\n",
 	       ra, tid);
 #endif /* CONFIG_MAC80211_ATBM_HT_DEBUG */
 
@@ -698,7 +697,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 	sta = sta_info_get(sdata, ra);
 	if (!sta) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "Could not find station: %pM\n", ra);
+		atbm_printk_agg("Could not find station: %pM\n", ra);
 #endif
 		goto unlock;
 	}
@@ -709,7 +708,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 
 	if (!tid_tx || !test_bit(HT_AGG_STATE_STOPPING, &tid_tx->state)) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "unexpected callback to A-MPDU stop\n");
+		atbm_printk_agg("unexpected callback to A-MPDU stop\n");
 #endif
 		goto unlock_sta;
 	}
@@ -734,13 +733,12 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 	ieee80211_assign_tid_tx(sta, tid, NULL);
 
 	ieee80211_agg_splice_finish(sta->sdata, tid);
-
-#if ((ATBM_ALLOC_MEM_DEBUG == 0) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,40)))
-	kfree_rcu(tid_tx, rcu_head);
-#else
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(2,6,40)) || (defined (ATBM_ALLOC_MEM_DEBUG)))
+	#pragma message("Mem Debug Enable")
 	call_rcu(&tid_tx->rcu_head, kfree_tid_tx);
+#else
+	kfree_rcu(tid_tx, rcu_head);
 #endif
-
  unlock_sta:
 	spin_unlock_bh(&sta->lock);
 	mutex_unlock(&sta->ampdu_mlme.mtx);
@@ -791,15 +789,15 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 
 	if (mgmt->u.action.u.addba_resp.dialog_token != tid_tx->dialog_token) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG "wrong addBA response token, tid %d\n", tid);
+		atbm_printk_agg("wrong addBA response token, tid %d\n", tid);
 #endif
 		goto out;
 	}
 
-	del_timer_sync(&tid_tx->addba_resp_timer);
+	atbm_del_timer_sync(&tid_tx->addba_resp_timer);
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-	printk(KERN_DEBUG "switched off addBA timer for tid %d\n", tid);
+	atbm_printk_agg("switched off addBA timer for tid %d\n", tid);
 #endif
 
 	/*
@@ -810,7 +808,7 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 	if (test_bit(HT_AGG_STATE_WANT_STOP, &tid_tx->state) ||
 	    test_bit(HT_AGG_STATE_STOPPING, &tid_tx->state)) {
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
-		printk(KERN_DEBUG
+		atbm_printk_agg(
 		       "got addBA resp for tid %d but we already gave up\n",
 		       tid);
 #endif

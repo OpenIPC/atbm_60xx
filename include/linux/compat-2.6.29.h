@@ -239,8 +239,9 @@ static inline struct net_device_stats *dev_get_stats(struct net_device *dev)
 extern void usb_unpoison_anchored_urbs(struct usb_anchor *anchor);
 #endif /* CONFIG_USB */
 #endif
-
+#ifdef CONFIG_ATBM_SUPPORT_REALTIME_CHANGE_MAC
 extern int eth_mac_addr(struct net_device *dev, void *p);
+#endif
 extern int eth_change_mtu(struct net_device *dev, int new_mtu);
 extern int eth_validate_addr(struct net_device *dev);
 

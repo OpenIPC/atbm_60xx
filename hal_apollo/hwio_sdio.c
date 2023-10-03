@@ -140,7 +140,7 @@ static int __atbm_data_write(struct atbm_common *hw_priv, u16 addr,
 static inline int __atbm_reg_read_32(struct atbm_common *hw_priv,
 					u16 addr, u32 *val)
 {
-	return __atbm_reg_read(hw_priv, addr, val, sizeof(val));
+	return __atbm_reg_read(hw_priv, addr, val, 4);
 }
 
 static inline int __atbm_reg_write_32(struct atbm_common *hw_priv,
@@ -245,7 +245,7 @@ int atbm_reg_read_unlock(struct atbm_common *hw_priv, u16 addr, void *buf,
 	while (retry <= 3) {
 		ret = __atbm_reg_read(hw_priv, addr, buf, buf_len);
 		if(ret){
-			printk(KERN_ERR "%s\n",__func__);
+			atbm_printk_err("%s\n",__func__);
 			retry++;
 		}else{
 			break;
@@ -263,7 +263,7 @@ int atbm_reg_write_unlock(struct atbm_common *hw_priv, u16 addr, const void *buf
 	while (retry <= 3) {
 		ret = __atbm_reg_write(hw_priv, addr, buf, buf_len);
 		if(ret){
-			printk(KERN_ERR "%s\n",__func__);
+			atbm_printk_err("%s\n",__func__);
 			retry++;
 		}else{
 			break;
@@ -271,29 +271,36 @@ int atbm_reg_write_unlock(struct atbm_common *hw_priv, u16 addr, const void *buf
 	}
 	return ret;
 }
+int atbm_data_read_unlock(struct atbm_common *hw_priv, void *buf, u32 buf_len)
+{
+	int ret = -1, retry = 1;
+	int buf_id_rx = hw_priv->buf_id_rx;
+	
+	while (retry <= MAX_RETRY) {
+		ret = __atbm_data_read(hw_priv,
+				ATBM_HIFREG_IN_OUT_QUEUE_REG_ID, buf,
+				buf_len, buf_id_rx + 1);
+		if (!ret) {
+			buf_id_rx = (buf_id_rx + 1) & 3;
+			hw_priv->buf_id_rx = buf_id_rx;
+			break;
+		} else {
+			retry++;
+			mdelay(1000);
+			atbm_dbg(ATBM_APOLLO_DBG_ERROR, "%s,error :[%d]\n",
+					__func__, ret);
+		}
+	}
 
+	return ret;
+}
 int atbm_data_read(struct atbm_common *hw_priv, void *buf, u32 buf_len)
 {
-	int ret, retry = 1;
+	int ret;
 	BUG_ON(!hw_priv->sbus_ops);
 	hw_priv->sbus_ops->lock(hw_priv->sbus_priv);
 	{
-		int buf_id_rx = hw_priv->buf_id_rx;
-		while (retry <= MAX_RETRY) {
-			ret = __atbm_data_read(hw_priv,
-					ATBM_HIFREG_IN_OUT_QUEUE_REG_ID, buf,
-					buf_len, buf_id_rx + 1);
-			if (!ret) {
-				buf_id_rx = (buf_id_rx + 1) & 3;
-				hw_priv->buf_id_rx = buf_id_rx;
-				break;
-			} else {
-				retry++;
-				mdelay(1000);
-				atbm_dbg(ATBM_APOLLO_DBG_ERROR, "%s,error :[%d]\n",
-						__func__, ret);
-			}
-		}
+		ret = atbm_data_read_unlock(hw_priv,buf,buf_len);
 	}
 	hw_priv->sbus_ops->unlock(hw_priv->sbus_priv);
 	return ret;
@@ -311,7 +318,7 @@ int atbm_data_force_write(struct atbm_common *hw_priv, const void *buf,
         BUG_ON(!hw_priv->sbus_ops);
         hw_priv->sbus_ops->lock(hw_priv->sbus_priv);
         buf_id_tx = ((hw_priv->buf_id_tx-1)&0x3f)+64;
-		printk(KERN_ERR "buf_id_tx =%d %s\n",buf_id_tx,__func__);
+		atbm_printk_always("buf_id_tx =%d\n",buf_id_tx);
         while (retry <= MAX_RETRY) {
                 ret = __atbm_data_write(hw_priv,
                                 ATBM_HIFREG_IN_OUT_QUEUE_REG_ID, buf,
@@ -333,16 +340,13 @@ int atbm_data_force_write(struct atbm_common *hw_priv, const void *buf,
 }
 #endif //#if (PROJ_TYPE>=ARES_B)
 //sdio
-int atbm_data_write(struct atbm_common *hw_priv, const void *buf,
+int atbm_data_write_unlock(struct atbm_common *hw_priv, const void *buf,
 			size_t buf_len)
 {
-	int ret, retry = 1;
+	int ret = -1, retry = 1;
 	int buf_id_tx;
 
-	BUG_ON(!hw_priv->sbus_ops);
-	hw_priv->sbus_ops->lock(hw_priv->sbus_priv);
 	buf_id_tx = hw_priv->buf_id_tx;
-//	printk("buf_id =%d,buf_id_offset=%d\n",buf_id_tx,hw_priv->buf_id_offset);
 	while (retry <= MAX_RETRY) {
 		ret = __atbm_data_write(hw_priv,
 				ATBM_HIFREG_IN_OUT_QUEUE_REG_ID, buf,
@@ -361,6 +365,17 @@ int atbm_data_write(struct atbm_common *hw_priv, const void *buf,
 		}
 	}
 
+	return ret;
+}
+int atbm_data_write(struct atbm_common *hw_priv, const void *buf,
+			size_t buf_len)
+{
+	int ret;
+
+	BUG_ON(!hw_priv->sbus_ops);
+	hw_priv->sbus_ops->lock(hw_priv->sbus_priv);
+//	printk("buf_id =%d,buf_id_offset=%d\n",buf_id_tx,hw_priv->buf_id_offset);
+	ret = atbm_data_write_unlock(hw_priv,buf,buf_len);
 	hw_priv->sbus_ops->unlock(hw_priv->sbus_priv);
 	return ret;
 }
@@ -635,7 +650,7 @@ int atbm_ahb_write(struct atbm_common *priv, u32 addr, const void *buf,
                                 "%s: Can't wrire more than 0xfff words.\n",
                                 __func__);
                 WARN_ON(1);
-				printk(KERN_ERR "%s:EXIT (1) \n",__func__);
+				atbm_printk_err("%s:EXIT (1) \n",__func__);
                 return -EINVAL;
         }
 
@@ -675,7 +690,7 @@ int atbm_ahb_write_unlock(struct atbm_common *priv, u32 addr, const void *buf,
                                 "%s: Can't wrire more than 0xfff words.\n",
                                 __func__);
                 WARN_ON(1);
-				printk(KERN_ERR "%s:EXIT (1) \n",__func__);
+				atbm_printk_err("%s:EXIT (1) \n",__func__);
                 return -EINVAL;
         }
         /* Write address */
@@ -892,7 +907,7 @@ void __atbm_irq_dbgPrint(struct atbm_common *priv)
 		pr_err("Can't read config register.\n");
 		return;
 	}
-	printk("ATBM_HIFREG_CONFIG_REG_ID=0x%x\n", val32);
+	atbm_printk_debug("ATBM_HIFREG_CONFIG_REG_ID=0x%x\n", val32);
 
 	return;
 }
@@ -951,11 +966,35 @@ int atbm_before_load_firmware(struct atbm_common *hw_priv)
 	BUG_ON(!hw_priv);	
 	#if (ATBM_VOL_L == 10)
 	#pragma message ("1.0v")
-	printk(KERN_ERR "+++++++++++++++++1.0v+++++++++++++++++++\n");
+	atbm_printk_init("+++++++++++++++++1.0v+++++++++++++++++++\n");
 	ret = atbm_direct_write_reg_32(hw_priv,0xacc0178,0x3400071);
 	if(ret<0)
-		printk(KERN_ERR "write 0xacc0178 err\n");
+		atbm_printk_err("write 0xacc0178 err\n");
 #endif
+
+{
+	/*
+		not reset wifi , insmod wifi success
+	*/
+	ret = atbm_direct_read_reg_32(hw_priv,0xab0016c,&val32);
+	if(ret<0)
+		atbm_printk_err("read 0xab0016c err\n");
+	atbm_printk_err("%s:0xab0016c = [%x]\n",__func__,val32);
+	val32 |= BIT(0);
+	ret = atbm_direct_write_reg_32(hw_priv,0xab0016c,val32);
+	if(ret<0)
+		atbm_printk_err("write 0xab0016c err\n");
+	
+	ret = atbm_direct_read_reg_32(hw_priv,0xab0016c,&val32);
+	if(ret<0)
+		atbm_printk_err("read 0xab0016c err\n");
+	atbm_printk_err("%s:0xab0016c = [%x]\n",__func__,val32);
+	val32 &= ~BIT(0);
+	ret = atbm_direct_write_reg_32(hw_priv,0xab0016c,val32);
+	if(ret<0)
+		atbm_printk_err("write 0xab0016c err\n");
+}
+
 retry:
 	/* Read CONFIG Register Value - We will read 32 bits */
 	ret = atbm_reg_read_32(hw_priv, ATBM_HIFREG_CONFIG_REG_ID, &val32);
@@ -1020,7 +1059,7 @@ retry:
 				atbm_dbg(ATBM_APOLLO_DBG_MSG, "atbm_system_done error.\n");
 			}
 #else		
-			printk(KERN_ERR "%s:do not set config to smu\n",__func__);
+			atbm_printk_err("%s:do not set config to smu\n",__func__);
 #endif
 
 
@@ -1114,7 +1153,7 @@ retry:
 	atbm_ahb_write_32(priv,0x18e00014,0x200);
 	atbm_ahb_read_32(priv,0x18e00014,&val32_1);
 	//atbm_ahb_read_32(priv,0x16400000,&testreg_uart);
-	printk("0x18e000e4-->%08x %08x\n",val32_1);
+	atbm_printk_bus("0x18e000e4-->%08x %08x\n",val32_1);
 #endif//TEST_DCXO_CONFIG
 
 out:
@@ -1126,22 +1165,24 @@ out:
 			goto out;
 		}
 		ret =atbm_reg_read_8(hw_priv,0x19,&Dpll_val_suc_fail);
-		printk(KERN_ERR "%s:Dpll_val_suc_fail(%x)\n",__func__,Dpll_val_suc_fail);
+		atbm_printk_err("%s:Dpll_val_suc_fail(%x)\n",__func__,Dpll_val_suc_fail);
 		atbm_reset_lmc_cpu(hw_priv);
 		goto retry;
 	}
 #if (DPLL_CLOCK == DPLL_CLOCK_24M)
+#if (PROJ_TYPE<=ARES_B)
 	{
 		u32 reset_reg = 0;
 		#pragma message("add delay before load fw")
-		mdelay(100);
+		mdelay(1);
 		ret = atbm_direct_read_reg_32(hw_priv,0x16100074,&reset_reg);
-		printk(KERN_ERR "%s:read [0x16100074]=[%x],ret(%d)\n",__func__,reset_reg,ret);
+		atbm_printk_err("%s:read [0x16100074]=[%x],ret(%d)\n",__func__,reset_reg,ret);
 		reset_reg |= BIT(0);
 		ret = atbm_direct_write_reg_32(hw_priv,0x16100074,reset_reg);		
-		printk(KERN_ERR "%s:write [0x16100074]=[%x],ret(%d)\n",__func__,reset_reg,ret);
-		mdelay(100);
+		atbm_printk_err("%s:write [0x16100074]=[%x],ret(%d)\n",__func__,reset_reg,ret);
+		mdelay(1);
 	}
+#endif 
 #endif
 	return ret;
 }
@@ -1221,7 +1262,7 @@ int atbm_after_load_firmware(struct atbm_common *hw_priv)
 				"config register.\n", __func__);
 			goto unsubscribe;
 		}
-#if (PROJ_TYPE>=ARES_A)
+#if (PROJ_TYPE==ARES_B)
 		ret=atbm_ahb_write_32(hw_priv,0x16100074,0x1);
 		if(ret<0){
 			atbm_dbg(ATBM_APOLLO_DBG_ERROR,
@@ -1229,7 +1270,30 @@ int atbm_after_load_firmware(struct atbm_common *hw_priv)
 			goto out;
 		}
 #endif
-		
+#ifdef USE_GPIO_23
+		/*use GPIO23 for sdio irq*/
+		ret=atbm_ahb_read_32(hw_priv,0x17400000,&val32);
+		val32|=BIT(1);
+		val32|=BIT(8);
+		ret=atbm_ahb_write_32(hw_priv,0x17400000,val32);
+
+		ret=atbm_ahb_read_32(hw_priv,0x17400030,&val32);
+		val32&=~(BIT(19)|BIT(18)|BIT(17)|BIT(16));
+		val32|=BIT(19);
+		ret=atbm_ahb_write_32(hw_priv,0x17400030,val32);
+#endif
+
+#ifdef USE_GPIO_1
+		/*use GPIO1 for sdio irq*/
+		ret=atbm_ahb_read_32(hw_priv,0x17400000,&val32);
+		val32&=~BIT(1);
+		ret=atbm_ahb_write_32(hw_priv,0x17400000,val32);
+
+		ret=atbm_ahb_read_32(hw_priv,0x17400004,&val32);
+		val32&=~(BIT(19)|BIT(18)|BIT(17)|BIT(16));
+		ret=atbm_ahb_write_32(hw_priv,0x17400004,val32);
+#endif
+
 		/* Configure device for MESSSAGE MODE */
 		ret = atbm_reg_read_32(hw_priv, ATBM_HIFREG_CONFIG_REG_ID, &val32);
 		if (ret < 0) {
@@ -1245,12 +1309,12 @@ int atbm_after_load_firmware(struct atbm_common *hw_priv)
 				"%s: set_mode: can't write config register.\n",
 				__func__);
 			goto unsubscribe;
-		}
+		}	
+		hw_priv->init_done = 1;	
 		/* Unless we read the CONFIG Register we are
 		 * not able to get an interrupt */
 		mdelay(10);
 		atbm_reg_read_32(hw_priv, ATBM_HIFREG_CONFIG_REG_ID, &val32);
-
 	out:
 		return ret;
 

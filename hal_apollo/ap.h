@@ -39,22 +39,22 @@ int atbm_ampdu_action(struct ieee80211_hw *hw,
 
 void atbm_suspend_resume(struct atbm_vif *priv,
 			  struct wsm_suspend_resume *arg);
-void atbm_set_tim_work(struct work_struct *work);
-void atbm_set_cts_work(struct work_struct *work);
-void atbm_multicast_start_work(struct work_struct *work);
-void atbm_multicast_stop_work(struct work_struct *work);
+void atbm_set_tim_work(struct atbm_work_struct *work);
+//void atbm_set_cts_work(struct atbm_work_struct *work);
+void atbm_multicast_start_work(struct atbm_work_struct *work);
+void atbm_multicast_stop_work(struct atbm_work_struct *work);
 void atbm_mcast_timeout(unsigned long arg);
 int atbm_find_link_id(struct atbm_vif *priv, const u8 *mac);
 int atbm_alloc_link_id(struct atbm_vif *priv, const u8 *mac);
-void atbm_link_id_work(struct work_struct *work);
-void atbm_link_id_gc_work(struct work_struct *work);
+void atbm_link_id_work(struct atbm_work_struct *work);
+void atbm_link_id_gc_work(struct atbm_work_struct *work);
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 void atbm_notify_noa(struct atbm_vif *priv, int delay);
+#endif
 int ABwifi_unmap_link(struct atbm_vif *priv, int link_id);
-void atbm_ht_info_update_work(struct work_struct *work);
-#ifdef ATBM_SUPPORT_PKG_MONITOR
+void atbm_ht_info_update_work(struct atbm_work_struct *work);
 int atbm_start_monitor_mode(struct atbm_vif *priv,
 				struct ieee80211_channel *chan);
 int atbm_stop_monitor_mode(struct atbm_vif *priv);
-#endif
 
 #endif

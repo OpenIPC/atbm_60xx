@@ -25,9 +25,8 @@
 /* DPLL initial values */
 #define DPLL_INIT_VAL_9000		(0x00000191)
 #define DPLL_INIT_VAL_CW1200		(0x0EC4F121)
-#define MAX_RETRY		10
-
-
+#define MAX_RETRY		3
+#define SDIO_TX_MAXLEN 4096*8
 
 #define ALTOBEAM_WIFI_HDR_FLAG  (0x34353677)
 #if (PROJ_TYPE>=ARES_A)
@@ -40,8 +39,9 @@
 #define DOWNLOAD_DTCM_SIZE		(48*1024)
 
 
-#define DOWNLOAD_BLOCK_SIZE		(128)
+//#define DOWNLOAD_BLOCK_SIZE		(128)
 
+#define DOWNLOAD_BLOCK_SIZE		(508)
 
 
 
@@ -119,6 +119,9 @@
 #define ATBM_HIFREG_CONF_DATA_IRQ_ENABLE	(BIT(16))
 
 #define ATBM_HIFREG_CONFIG_CPU_RESET_BIT_2	(BIT(22))
+int atbm_data_read_unlock(struct atbm_common *hw_priv, void *buf, u32 buf_len);
+int atbm_data_write_unlock(struct atbm_common *hw_priv, const void *buf,
+			size_t buf_len);
 int atbm_data_read(struct atbm_common *hw_priv,
 		     void *buf, u32 buf_len);
 
@@ -162,6 +165,15 @@ static inline int atbm_reg_read_16(struct atbm_common *hw_priv,
 	u32 bigVal;
 	int ret;
 	ret = atbm_reg_read(hw_priv, addr, &bigVal, sizeof(bigVal));
+	*val = (u16)bigVal;
+	return ret;
+}
+static inline int atbm_reg_read_16_unlock(struct atbm_common *hw_priv,
+				     u16 addr, u16 *val)
+{
+	u32 bigVal;
+	int ret;
+	ret = atbm_reg_read_unlock(hw_priv, addr, &bigVal, sizeof(bigVal));
 	*val = (u16)bigVal;
 	return ret;
 }
@@ -275,7 +287,7 @@ static inline int atbm_ahb_write_unlock_32(struct atbm_common *hw_priv,
 	while(retry<=3){
 		ret = atbm_ahb_write_unlock(hw_priv, addr, &val, sizeof(val));
 		if(ret){
-			printk(KERN_ERR "%s\n",__func__);
+			atbm_printk_err("%s\n",__func__);
 		}else{
 			break;
 		}

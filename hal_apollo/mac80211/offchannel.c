@@ -17,6 +17,7 @@
 #include "ieee80211_i.h"
 #include "driver-trace.h"
 #include "driver-ops.h"
+#ifdef CONFIG_ATBM_SUPPORT_P2P
 #if 0
 /*
  * inform AP that we will go to sleep so that it will buffer the frames
@@ -35,7 +36,7 @@ static void ieee80211_offchannel_ps_enable(struct ieee80211_sub_if_data *sdata)
 	del_timer_sync(&ifmgd->bcn_mon_timer);
 	del_timer_sync(&ifmgd->conn_mon_timer);
 
-	cancel_work_sync(&sdata->dynamic_ps_enable_work);
+	atbm_cancel_work_sync(&sdata->dynamic_ps_enable_work);
 
 	if (sdata->vif.bss_conf.ps_enabled) {
 		sdata->offchannel_ps_enabled = true;
@@ -106,9 +107,14 @@ void ieee80211_offchannel_stop_beaconing(struct ieee80211_local *local)
 			continue;
 
 		/* disable beaconing */
-		if (sdata->vif.type == NL80211_IFTYPE_AP ||
-		    sdata->vif.type == NL80211_IFTYPE_ADHOC ||
-		    sdata->vif.type == NL80211_IFTYPE_MESH_POINT)
+		if (sdata->vif.type == NL80211_IFTYPE_AP
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
+		    || sdata->vif.type == NL80211_IFTYPE_ADHOC
+#endif
+#ifdef CONFIG_MAC80211_ATBM_MESH
+		    || sdata->vif.type == NL80211_IFTYPE_MESH_POINT
+#endif
+		    )
 			ieee80211_bss_info_change_notify(
 				sdata, BSS_CHANGED_BEACON_ENABLED);
 
@@ -200,9 +206,14 @@ void ieee80211_offchannel_return(struct ieee80211_local *local,
 
 		/* re-enable beaconing */
 		if (enable_beaconing &&
-		    (sdata->vif.type == NL80211_IFTYPE_AP ||
-		     sdata->vif.type == NL80211_IFTYPE_ADHOC ||
-		     sdata->vif.type == NL80211_IFTYPE_MESH_POINT))
+		    (sdata->vif.type == NL80211_IFTYPE_AP
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
+		     || sdata->vif.type == NL80211_IFTYPE_ADHOC
+#endif
+#ifdef CONFIG_MAC80211_ATBM_MESH
+		     || sdata->vif.type == NL80211_IFTYPE_MESH_POINT
+#endif
+		    ))
 			ieee80211_bss_info_change_notify(
 				sdata, BSS_CHANGED_BEACON_ENABLED);
 	}
@@ -238,7 +249,7 @@ void ieee80211_handle_roc_started(struct ieee80211_roc_work *roc)
 	roc->notified = true;
 }
 
-static void ieee80211_hw_roc_start(struct work_struct *work)
+static void ieee80211_hw_roc_start(struct atbm_work_struct *work)
 {
 	struct ieee80211_local *local =
 		container_of(work, struct ieee80211_local, hw_roc_start);
@@ -303,6 +314,9 @@ void ieee80211_start_next_roc(struct ieee80211_local *local)
 			ieee80211_queue_work(&local->hw, &local->work_work);
 		}	
 		ieee80211_run_pending_scan(local);
+#ifdef CONFIG_ATBM_STA_LISTEN
+		__ieee80211_recalc_idle(local);
+#endif
 		return;
 	}
 
@@ -326,8 +340,7 @@ void ieee80211_start_next_roc(struct ieee80211_local *local)
 		roc->started = true;
 
 		if (ret) {
-			wiphy_warn(local->hw.wiphy,
-				   "failed to start next HW ROC (%d)\n", ret);
+			atbm_printk_warn("failed to start next HW ROC (%d)\n", ret);
 			/*
 			 * queue the work struct again to avoid recursion
 			 * when multiple failures occur
@@ -398,7 +411,7 @@ void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc)
 	atbm_kfree(roc);
 }
 
-void ieee80211_sw_roc_work(struct work_struct *work)
+void ieee80211_sw_roc_work(struct atbm_work_struct *work)
 {
 	struct ieee80211_roc_work *roc =
 		container_of(work, struct ieee80211_roc_work, work.work);
@@ -468,7 +481,7 @@ void ieee80211_sw_roc_work(struct work_struct *work)
 	mutex_unlock(&local->mtx);
 }
 
-static void ieee80211_hw_roc_done(struct work_struct *work)
+static void ieee80211_hw_roc_done(struct atbm_work_struct *work)
 {
 	struct ieee80211_local *local =
 		container_of(work, struct ieee80211_local, hw_roc_done);
@@ -487,9 +500,9 @@ static void ieee80211_hw_roc_done(struct work_struct *work)
 		goto out_unlock;
 
 	cookie = roc->mgmt_tx_cookie ? roc->mgmt_tx_cookie: roc->cookie;
-	printk(KERN_ERR "%s:cookie(%x),roc_cookie(%x)\n",__func__,(int)cookie,(int)local->roc_cookie);
+	atbm_printk_mgmt( "%s:cookie(%x),roc_cookie(%x)\n",__func__,(int)cookie,(int)local->roc_cookie);
 	if(cookie != local->roc_cookie) {
-		printk(KERN_ERR "%s:cookie(%llx),local->roc_cookie(%llx)\n",__func__,cookie,local->roc_cookie);
+		atbm_printk_err( "%s:cookie(%llx),local->roc_cookie(%llx)\n",__func__,cookie,local->roc_cookie);
 		local->roc_cookie = 0;
 		goto out_unlock;
 	}
@@ -506,7 +519,6 @@ static void ieee80211_hw_roc_done(struct work_struct *work)
  out_unlock:
 	mutex_unlock(&local->mtx);
 }
-
 void ieee80211_remain_on_channel_expired(struct ieee80211_hw *hw, u64 cookie)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
@@ -518,11 +530,10 @@ void ieee80211_remain_on_channel_expired(struct ieee80211_hw *hw, u64 cookie)
 	ieee80211_queue_work(hw, &local->hw_roc_done);
 }
 //EXPORT_SYMBOL_GPL(ieee80211_remain_on_channel_expired);
-
 void ieee80211_hw_roc_setup(struct ieee80211_local *local)
 {
-	INIT_WORK(&local->hw_roc_start, ieee80211_hw_roc_start);
-	INIT_WORK(&local->hw_roc_done, ieee80211_hw_roc_done);
+	ATBM_INIT_WORK(&local->hw_roc_start, ieee80211_hw_roc_start);
+	ATBM_INIT_WORK(&local->hw_roc_done, ieee80211_hw_roc_done);
 	INIT_LIST_HEAD(&local->roc_list);
 }
 
@@ -555,7 +566,7 @@ void ieee80211_roc_purge(struct ieee80211_sub_if_data *sdata)
 	mutex_unlock(&local->mtx);
 	
 	if(pendding_roc != NULL){
-		printk(KERN_ERR "%s:cancle pendding_roc\n",__func__);
+		atbm_printk_mgmt("%s:cancle pendding_roc\n",__func__);
 		ieee80211_roc_notify_destroy(pendding_roc);
 	}
 	list_for_each_entry_safe(roc, tmp, &tmp_list, list) {
@@ -566,9 +577,10 @@ void ieee80211_roc_purge(struct ieee80211_sub_if_data *sdata)
 			ieee80211_queue_delayed_work(&local->hw, &roc->work, 0);
 
 			/* work will clean up etc */
-			flush_delayed_work(&roc->work);
+			atbm_flush_delayed_work(&roc->work);
 		}
 	}
 
 	WARN_ON_ONCE(!list_empty(&tmp_list));
 }
+#endif

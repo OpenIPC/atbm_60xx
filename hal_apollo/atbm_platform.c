@@ -14,6 +14,12 @@
 #include "apollo.h"
 #include "sbus.h"
 #include "apollo_plat.h"
+#ifdef SDIO_BUS
+#ifndef CONFIG_ATBM_SDIO_MMC_ID 
+#define CONFIG_ATBM_SDIO_MMC_ID	"mmc0"
+#endif
+
+#pragma	message(CONFIG_ATBM_SDIO_MMC_ID)
 
 #if (ATBM_WIFI_PLATFORM == PLATFORM_XUNWEI)
 #define PLATFORMINF	"xunwei"
@@ -49,8 +55,9 @@
 
 #endif
 #if (ATBM_WIFI_PLATFORM == 10)
-extern int rockchip_wifi_power(int on);
-extern int rockchip_wifi_set_carddetect(int val);
+#include <linux/rfkill-wlan.h>
+//extern int rockchip_wifi_power(int on);
+//extern int rockchip_wifi_set_carddetect(int val);
 #endif
 #if ((ATBM_WIFI_PLATFORM == PLATFORM_AMLOGIC_S805) || (ATBM_WIFI_PLATFORM == PLATFORM_AMLOGIC_905))
 
@@ -104,7 +111,7 @@ u32 atbm_wlan_get_oob_irq(void)
 #else
 	host_oob_irq = wifi_irq_num();
 #endif
-	printk("host_oob_irq: %d \r\n", host_oob_irq);
+	atbm_printk_platform("host_oob_irq: %d \r\n", host_oob_irq);
 
 	return host_oob_irq;
 }
@@ -123,13 +130,13 @@ static int atbm_platform_power_ctrl(const struct atbm_platform_data *pdata,bool 
 		enabled = 1;
 		#endif //#ifdef WIFI_FW_DOWNLOAD
 		if (gpio_request(pdata->power_gpio, "WIFI_POWERON")!=0) {
-			printk("[altobeam] ERROR:Cannot request WIFI_POWERON\n");
+			atbm_printk_platform("[altobeam] ERROR:Cannot request WIFI_POWERON\n");
 		} else {
 			gpio_direction_output(pdata->power_gpio, 1);/* WLAN_CHIP_PWD */
 			gpio_set_value(pdata->power_gpio, enabled);
 			mdelay(1);
 			gpio_free(pdata->power_gpio);
-			printk("[altobeam] + %s :EXYNOS4_GPC1(0) wlan powerwew %s\n",__func__, enabled?"on":"off");
+			atbm_printk_platform("[altobeam] + %s :EXYNOS4_GPC1(0) wlan powerwew %s\n",__func__, enabled?"on":"off");
 		}
 	}
 	#endif //(ATBM_WIFI_PLATFORM == PLATFORM_XUNWEI) ||(ATBM_WIFI_PLATFORM == PLATFORM_FRIENDLY)
@@ -178,7 +185,7 @@ extern void extern_wifi_set_enable(int is_on);
 	if (enabled) {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))
 	    if (wifi_setup_dt()) {
-	        printk("%s : fail to setup dt\n", __func__);
+	        atbm_printk_platform("%s : fail to setup dt\n", __func__);
 	    }
 #endif
 		extern_wifi_set_enable(0);
@@ -186,11 +193,11 @@ extern void extern_wifi_set_enable(int is_on);
 		extern_wifi_set_enable(1);
 		msleep(200);
 		sdio_reinit();
-		printk("atbm sdio extern_wifi_set_enable 1\n");
+		atbm_printk_platform("atbm sdio extern_wifi_set_enable 1\n");
 	} else {
 		extern_wifi_set_enable(0);
 		msleep(200);
-		printk("atbm sdio extern_wifi_set_enable 0\n");
+		atbm_printk_platform("atbm sdio extern_wifi_set_enable 0\n");
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))
     	wifi_teardown_dt();
 #endif
@@ -200,11 +207,11 @@ extern void extern_wifi_set_enable(int is_on);
 
 #if (ATBM_WIFI_PLATFORM == 10)
 	mdelay(100);
-    rockchip_wifi_power(enabled);
+    //rockchip_wifi_power(enabled);
 #endif
 
 #endif
-	printk("[%s]:platform set power [%d]\n",platform,enabled);
+	atbm_printk_platform("[%s]:platform set power [%d]\n",platform,enabled);
 	return ret;
 }
 static int atbm_platform_insert_crtl(const struct atbm_platform_data *pdata,bool enabled)
@@ -223,12 +230,12 @@ static int atbm_platform_insert_crtl(const struct atbm_platform_data *pdata,bool
 
 		mdelay(10);
 		if (gpio_request(CARD_INSERT_GPIO, "WIFI_GPIO2")!=0) {
-			printk("[altobeam] ERROR:Cannot request WIFI_GPIO2\n");
+			atbm_printk_platform("[altobeam] ERROR:Cannot request WIFI_GPIO2\n");
 		} else {
 			gpio_direction_output(CARD_INSERT_GPIO, 1);/* SDIO_CARD_PWD */
 			gpio_set_value(CARD_INSERT_GPIO, outValue);
 			gpio_free(CARD_INSERT_GPIO);
-			printk("[altobeam] + %s : wlan card %s\n",__func__, enabled?"insert":"remmove");
+			atbm_printk_platform("[altobeam] + %s : wlan card %s\n",__func__, enabled?"insert":"remmove");
 		}
 	}
 	#endif
@@ -242,7 +249,7 @@ static int atbm_platform_insert_crtl(const struct atbm_platform_data *pdata,bool
 		pdata = pdata;
 		type = script_get_item("wifi_para", "wifi_sdc_id", &val);
 		sdc_id = val.val;
-		printk("scan scd_id(%d)\n",sdc_id);
+		atbm_printk_platform("scan scd_id(%d)\n",sdc_id);
 		sw_mci_rescan_card(sdc_id, enabled);
 	}
 	#endif
@@ -268,10 +275,10 @@ static int atbm_platform_insert_crtl(const struct atbm_platform_data *pdata,bool
 	#endif
 #if (ATBM_WIFI_PLATFORM == 10)
      mdelay(100);
-     rockchip_wifi_set_carddetect(enabled);
+     //rockchip_wifi_set_carddetect(enabled);
 #endif
 #endif
-	 printk("[%s]:platform insert ctrl [%d]\n",platform,enabled);
+	 atbm_printk_platform("[%s]:platform insert ctrl [%d]\n",platform,enabled);
 	return ret;
 }
 
@@ -298,7 +305,7 @@ int atbm_plat_request_gpio_irq(const struct atbm_platform_data *pdata,struct sbu
 
 #if(ATBM_WIFI_PLATFORM == PLATFORM_AMLOGIC_905)
 	bgf_irq	= atbm_wlan_get_oob_irq();
-	printk("atbm_plat_request_gpio_irq \n");
+	atbm_printk_platform("atbm_plat_request_gpio_irq \n");
 	/* Request the IRQ */
 	ret =  request_threaded_irq(bgf_irq, atbm_gpio_hardirq,
 					atbm_gpio_irq,
@@ -310,27 +317,14 @@ int atbm_plat_request_gpio_irq(const struct atbm_platform_data *pdata,struct sbu
 
 #elif (ATBM_WIFI_PLATFORM == PLATFORM_AMLOGIC_S805)
 	bgf_irq = pdata->irq_gpio;
-	printk("atbm_plat_request_gpio_irq \n");
+	atbm_printk_platform("atbm_plat_request_gpio_irq \n");
 #define IRQ_THREAD_REQ
-#ifdef ATBM_SDIO_TXRX_ENHANCE
-
-#ifndef IRQ_THREAD_REQ
-#define IRQ_THREAD_REQ
-#endif
-#endif
 #ifdef IRQ_THREAD_REQ
 	/* Request the IRQ */
-#ifdef ATBM_SDIO_TXRX_ENHANCE
-	ret =  request_threaded_irq(bgf_irq, atbm_gpio_hardirq,
-				    atbm_gpio_irq,
-					IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE ,
-				    "atbm_wlan_irq", self);
-#else
 	ret =  request_threaded_irq(bgf_irq, atbm_gpio_irq,
 				    NULL,
 					IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE ,
 				    "atbm_wlan_irq", self);
-#endif //ATBM_SDIO_TXRX_ENHANCE
 	if (WARN_ON(ret))
 		goto err;
 #else //IRQ_THREAD_REQ
@@ -349,10 +343,10 @@ int atbm_plat_request_gpio_irq(const struct atbm_platform_data *pdata,struct sbu
 	if (gpio_is_valid(pdata->irq_gpio)) {
 		ret = gpio_request(pdata->irq_gpio, "apollo wifi BGF EINT");
 		if (ret) {
-			printk("BGF_EINT gpio request fail, ret = %d\n", ret);
+			atbm_printk_platform("BGF_EINT gpio request fail, ret = %d\n", ret);
 		}
 	} else {
-			printk("invalid BGF_EINT gpio: %d,self %p\n", pdata->irq_gpio,self);
+			atbm_printk_platform("invalid BGF_EINT gpio: %d,self %p\n", pdata->irq_gpio,self);
 	}
 	bgf_irq = gpio_to_irq(pdata->irq_gpio);
 	ret =  enable_irq_wake(bgf_irq);
@@ -394,12 +388,10 @@ void atbm_plat_free_gpio_irq(const struct atbm_platform_data *pdata,struct sbus_
 
 #endif  //CONFIG_ATBM_APOLLO_USE_GPIO_IRQ
 #endif
-struct atbm_platform_data platform_data = {
-#if (ATBM_WIFI_PLATFORM == 10)
-	.mmc_id       = "mmc1",
-#else
-	.mmc_id       = "mmc2",
 #endif
+struct atbm_platform_data platform_data = {
+#ifdef SDIO_BUS
+	.mmc_id       = CONFIG_ATBM_SDIO_MMC_ID,
 	.clk_ctrl     = NULL,
 	.power_ctrl   = atbm_power_ctrl,
 	.insert_ctrl  = atbm_insert_crtl,
@@ -419,12 +411,16 @@ struct atbm_platform_data platform_data = {
 	.power_gpio	= EXYNOS4_GPK3(2),
 #endif
 	.reset_gpio = 0,
+#else
+	.clk_ctrl     = NULL,
+	.power_ctrl   = NULL,
+	.insert_ctrl  = NULL,
+#endif
 };
 
 struct atbm_platform_data *atbm_get_platform_data(void)
 {
 	return &platform_data;
-
 }
 
 

@@ -45,9 +45,9 @@ struct sbus_ops {
 	int (*set_block_size)(struct sbus_priv *self, u32 size);
 	void (*wtd_wakeup)( struct sbus_priv *self);
 	int (*usb_lock_reset)(struct sbus_priv *self);
-	#ifdef ATBM_USB_RESET
+#ifdef ATBM_USB_RESET
 	int (*usb_reset)(struct sbus_priv *self);
-	#endif
+#endif
 	int (*lmac_restart)(struct sbus_priv *self);
 	int (*bootloader_debug_config)(struct sbus_priv *self,u16 enable);	
 	int (*lmac_start)(struct sbus_priv *self);
@@ -56,6 +56,18 @@ struct sbus_ops {
 	int (*abort)(struct sbus_priv *self);
 	int (*sbus_wsm_write)(struct sbus_priv *self);
 	int (*sbus_data_write)(struct sbus_priv *self);
+	int (*sbus_init)(struct sbus_priv *self);
+	int (*sbus_deinit)(struct sbus_priv *self);
+	int (*sbus_wait_data_xmited)(struct sbus_priv *self);
+	int (*sbus_xmit_func_init)(struct sbus_priv *self);
+	int (*sbus_xmit_func_deinit)(struct sbus_priv *self);
+	int (*sbus_xmit_schedule)(struct sbus_priv *self);
+	int (*sbus_rev_func_init)(struct sbus_priv *self);
+	int (*sbus_rev_func_deinit)(struct sbus_priv *self);
+	int (*sbus_rev_schedule)(struct sbus_priv *self);
+	int (*sbus_bh_suspend)(struct sbus_priv *self);
+	int (*sbus_bh_resume)(struct sbus_priv *self);
+	int (*sbus_rev_giveback)(struct sbus_priv *self,void *giveback);
 #else
 	u32 (*align_size)(struct sbus_priv *self, u32 size);
 	int (*set_block_size)(struct sbus_priv *self, u32 size);
@@ -80,6 +92,17 @@ struct sbus_ops {
 	int (*bootloader_debug_config)(struct sbus_priv *self,u16 enable);	
 	int (*sbus_wsm_write)(struct sbus_priv *self);
 	int (*sbus_data_write)(struct sbus_priv *self);
+	int (*sbus_init)(struct sbus_priv *self);
+	int (*sbus_deinit)(struct sbus_priv *self);
+	int (*sbus_xmit_func_init)(struct sbus_priv *self);
+	int (*sbus_xmit_func_deinit)(struct sbus_priv *self);
+	int (*sbus_xmit_schedule)(struct sbus_priv *self);
+	int (*sbus_rev_func_init)(struct sbus_priv *self);
+	int (*sbus_rev_func_deinit)(struct sbus_priv *self);
+	int (*sbus_rev_schedule)(struct sbus_priv *self);
+	int (*sbus_bh_suspend)(struct sbus_priv *self);
+	int (*sbus_bh_resume)(struct sbus_priv *self);
+	int (*sbus_rev_giveback)(struct sbus_priv *self,void *giveback);
 #endif
 };
 

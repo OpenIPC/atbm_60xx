@@ -10,7 +10,7 @@
 
 #ifndef IEEE80211_RATE_H
 #define IEEE80211_RATE_H
-
+#ifndef CONFIG_RATE_HW_CONTROL
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/types.h>
@@ -160,7 +160,7 @@ static inline void atbm_rc80211_minstrel_ht_exit(void)
 {
 }
 #endif
-
+#endif
 struct tagAtbmRateControl{
 	u8 my_index[2];
 	u8 my_flags[2];

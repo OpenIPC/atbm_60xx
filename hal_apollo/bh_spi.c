@@ -15,7 +15,7 @@
 #include "hwio_spi.h"
 
 #if defined(CONFIG_ATBM_APOLLO_BH_DEBUG)
-#define bh_printk  printk
+#define bh_printk  atbm_printk_always
 #else
 #define bh_printk(...)
 #endif
@@ -29,7 +29,7 @@ int atbm_register_bh(struct atbm_common *hw_priv)
 {
 	int err = 0;
 	struct sched_param param = { .sched_priority = 1 };
-	bh_printk(KERN_DEBUG "[BH] register.\n");
+	bh_printk( "[BH] register.\n");
 	BUG_ON(hw_priv->bh_thread);
 	atomic_set(&hw_priv->bh_rx, 0);
 	atomic_set(&hw_priv->bh_tx, 0);
@@ -41,7 +41,7 @@ int atbm_register_bh(struct atbm_common *hw_priv)
 	init_waitqueue_head(&hw_priv->bh_wq);
 	init_waitqueue_head(&hw_priv->bh_evt_wq);
 
-	hw_priv->bh_thread = kthread_create(&spi_atbm_bh, hw_priv, "spi_atbm_bh");
+	hw_priv->bh_thread = kthread_create(&spi_atbm_bh, hw_priv, ieee80211_alloc_name(hw_priv->hw,"spi_atbm_bh"));
 
 	if (IS_ERR(hw_priv->bh_thread)) {
 		err = PTR_ERR(hw_priv->bh_thread);
@@ -64,7 +64,7 @@ void atbm_unregister_bh(struct atbm_common *hw_priv)
 		return;
 	
 	hw_priv->bh_thread = NULL;
-	bh_printk(KERN_DEBUG "[BH] unregister.\n");
+	bh_printk( "[BH] unregister.\n");
 	atomic_add(1, &hw_priv->bh_term);
 	wake_up(&hw_priv->bh_wq);
 	kthread_stop(thread);
@@ -85,9 +85,9 @@ int atbm_reset_lmc_cpu(struct atbm_common *hw_priv)
 int atbm_bh_suspend(struct atbm_common *hw_priv)
 {
 
-	bh_printk(KERN_DEBUG "[BH] suspend.\n");
+	bh_printk( "[BH] suspend.\n");
 	if (hw_priv->bh_error) {
-		wiphy_warn(hw_priv->hw->wiphy, "BH error -- can't suspend\n");
+		atbm_printk_err("BH error -- can't suspend\n");
 		return -EINVAL;
 	}
 
@@ -101,9 +101,9 @@ int atbm_bh_suspend(struct atbm_common *hw_priv)
 int atbm_bh_resume(struct atbm_common *hw_priv)
 {
 
-	bh_printk(KERN_DEBUG "[BH] resume.\n");
+	bh_printk( "[BH] resume.\n");
 	if (hw_priv->bh_error) {
-		wiphy_warn(hw_priv->hw->wiphy, "BH error -- can't resume\n");
+		atbm_printk_err("BH error -- can't resume\n");
 		return -EINVAL;
 	}
 
@@ -158,9 +158,9 @@ int atbm_spi_rx_bh_cb(struct atbm_common *hw_priv,struct sk_buff *skb)
 		goto __free;
 	}
 
-	//printk(KERN_DEBUG "rxcb len %x,id %x\n",wsm_len,wsm->id);
+	//printk( "rxcb len %x,id %x\n",wsm_len,wsm->id);
 	if (WARN_ON(wsm_seq != hw_priv->wsm_rx_seq)) {
-		printk("%s wsm_seq error %d %d \n",__func__,wsm_seq,hw_priv->wsm_rx_seq);
+		atbm_printk_err("%s wsm_seq error %d %d \n",__func__,wsm_seq,hw_priv->wsm_rx_seq);
 		goto __free;
 	}
 	hw_priv->wsm_rx_seq = (wsm_seq + 1) & 7;
@@ -175,7 +175,7 @@ int atbm_spi_rx_bh_cb(struct atbm_common *hw_priv,struct sk_buff *skb)
 
 	/* atbm_wsm_rx takes care on SKB livetime */
 	if (WARN_ON(wsm_handle_rx(hw_priv, wsm_id, wsm,&skb))){
-		printk("%s %d \n",__func__,__LINE__);
+		atbm_printk_err("%s %d \n",__func__,__LINE__);
 		goto __free;
 	}
 
@@ -229,7 +229,7 @@ int atbm_spi_rx_bh(struct atbm_common *hw_priv)
 
 	//printk("atbm_spi_rx_bh start\n");
 	ret = atbm_read_status_ready(hw_priv, &ready);
-	bh_printk(KERN_DEBUG "spiRxBh ready=%d\n", ready);
+	bh_printk( "spiRxBh ready=%d\n", ready);
 	if ((ready == 0))
 	{
 		goto out;
@@ -239,10 +239,10 @@ nextfrag:
 	ret = atbm_read_status(hw_priv, &status);
 	if ((ret != 0))//rx_ready
 	{
-		printk( "[BH] read status rx not ready\n");
+		atbm_printk_err( "[BH] read status rx not ready\n");
 		goto out;
 	}
-	bh_printk(KERN_DEBUG "%s %d\n", __func__, __LINE__);
+	bh_printk( "%s %d\n", __func__, __LINE__);
 
 	read_len = SPI_RX_DATA_LENGTH(status);
 	if (!read_len) {
@@ -251,7 +251,7 @@ nextfrag:
 	read_len *= 4;
 
 	if (WARN_ON(read_len < sizeof(struct wsm_hdr))) {
-		printk(KERN_DEBUG "Invalid read len: %d",
+		atbm_printk_err( "Invalid read len: %d",
 			read_len);
 		goto out;
 	}
@@ -280,14 +280,14 @@ nextfrag:
 		wsm_len = __le32_to_cpu(wsm->len);
 	}
 	
-	printk("atbm_spi_rx_bh start wsm_len:%d, read_len:%d\n", wsm_len, read_len);
+	atbm_printk_bus("atbm_spi_rx_bh start wsm_len:%d, read_len:%d\n", wsm_len, read_len);
 {
 	int i;
 	for (i = 0; i < 28; i++)
 	{
-		printk("%02x ", data[i]);
+		atbm_printk_bus("%02x ", data[i]);
 	}
-	printk("\n");
+	atbm_printk_bus("\n");
 }
 	
 	totalLen += read_len;
@@ -299,24 +299,24 @@ readyflagchange:
 		ret = atbm_read_status_ready(hw_priv, &ready);
 		if (ret !=0)
 		{
-			printk( "[BH]RX SPI read status error.\n");
+			atbm_printk_bus( "[BH]RX SPI read status error.\n");
 			goto error;
 		}
 		if (ready == 0)
 		{
-			printk("atbm_spi_rx_bh start readyflagchange cout=%d\n", count);
+			atbm_printk_bus("atbm_spi_rx_bh start readyflagchange cout=%d\n", count);
 			msleep(100);
 			count++;
 			if (count > 100)
 			{	
-				printk( "[BH]RX SPI read status ready count > 100 error.\n");
+				atbm_printk_err("[BH]RX SPI read status ready count > 100 error.\n");
 				goto error;
 			}
 			goto readyflagchange;
 		}else
 		{
 			msleep(600);
-			printk("atbm_spi_rx_bh start nextfrag\n");
+			atbm_printk_bus("atbm_spi_rx_bh start nextfrag\n");
 			goto nextfrag;
 		}
 	}
@@ -357,7 +357,7 @@ static int atbm_spi_xmit_data(struct atbm_common *hw_priv)
 	wsm_alloc_tx_buffer(hw_priv);
 	ret = wsm_get_tx(hw_priv, &data, &tx_len, &tx_burst, &vif_selected);
 	if (ret <= 0) {
-		  bh_printk(KERN_DEBUG "%s __LINE__ %d wsm_get_tx null\n",__func__,__LINE__);
+		  bh_printk( "%s __LINE__ %d wsm_get_tx null\n",__func__,__LINE__);
 		  wsm_release_tx_buffer(hw_priv, 1);
 		  status=-3;
 		  goto error;
@@ -389,15 +389,15 @@ nextflag:
 		{
 			int i;
 			
-			printk("tx prev\n");
+			atbm_printk_bus("tx prev\n");
 			for (i = 0; i < 28; i++)
 			{
-				printk("%02x ", data[i]);
+				atbm_printk_bus("%02x ", data[i]);
 			}
-			printk("\n");
+			atbm_printk_bus("\n");
 		}
 		
-		bh_printk(KERN_DEBUG"[TX] WSM:id=0x%x,txlen %d,seq %x , totalLen=%d\n",wsm->id,tx_len,hw_priv->wsm_tx_seq , totalLen);
+		bh_printk("[TX] WSM:id=0x%x,txlen %d,seq %x , totalLen=%d\n",wsm->id,tx_len,hw_priv->wsm_tx_seq , totalLen);
 		if (WARN_ON(atbm_write_data(hw_priv,data + totalLen, SPI_WRITE_BLOCK_SIZE))) {
 			wsm_release_tx_buffer(hw_priv, 1);
 			goto error;
@@ -405,12 +405,12 @@ nextflag:
 		{
 			int i;
 			
-			printk("tx after\n");
+			atbm_printk_bus("tx after\n");
 			for (i = 0; i < 28; i++)
 			{
-				printk("%02x ", data[i]);
+				atbm_printk_bus("%02x ", data[i]);
 			}
-			printk("\n");
+			atbm_printk_bus("\n");
 		}
 
 		totalLen += SPI_WRITE_BLOCK_SIZE;
@@ -420,7 +420,7 @@ flagchange:
 			ret = atbm_read_status_channelflag(hw_priv, &chanflag);
 			if ((ret !=0))
 			{
-				printk( "[BH] SPI read_status_channelflag error.\n");
+				atbm_printk_bus( "[BH] SPI read_status_channelflag error.\n");
 				wsm_release_tx_buffer(hw_priv, 1);
 				status=-5;
 				goto error;
@@ -432,7 +432,7 @@ flagchange:
 				{	
 					wsm_release_tx_buffer(hw_priv, 1);
 					status=-6;
-					printk( "[BH]TX SPI channelflag count > 10 error.\n");
+					atbm_printk_bus( "[BH]TX SPI channelflag count > 10 error.\n");
 					goto error;
 				}
 				msleep(600);
@@ -477,7 +477,7 @@ static int spi_atbm_bh(void *arg)
 				(hw_ready || term || hw_priv->bh_error);
 			}), HZ*50);
 	if (status <= 0 || term || hw_priv->bh_error){
-		printk("%s BH thread break %ld %d %d\n",__func__,status,term,hw_priv->bh_error);
+		atbm_printk_bus("%s BH thread break %ld %d %d\n",__func__,status,term,hw_priv->bh_error);
 		goto out;
 	}
 	
@@ -500,7 +500,7 @@ static int spi_atbm_bh(void *arg)
 				&& !hw_priv->device_can_sleep
 				&& !atomic_read(&hw_priv->recent_scan)) {
 			status = HZ*10;
-			bh_printk(KERN_DEBUG "[BH] No Device wakedown.\n");
+			bh_printk( "[BH] No Device wakedown.\n");
 
 		} else if (__ALL_HW_BUFS_USED)
 			status = HZ;
@@ -508,7 +508,8 @@ static int spi_atbm_bh(void *arg)
 			status = HZ*10;
 
 		//printk("spi_atbm_bh atbm_spi_read_rdy_start++\n");
-		atbm_spi_read_rdy_start();
+		atbm_spi_read_rdy_start();
+
 		//printk("spi_atbm_bh atbm_spi_read_rdy_start 2 ++%d\n",status/HZ);
 		status = wait_event_interruptible_timeout(hw_priv->bh_wq, ({
 				rx = atomic_xchg(&hw_priv->bh_rx, 0);
@@ -523,7 +524,7 @@ static int spi_atbm_bh(void *arg)
 		//printk("spi_atbm_bh atbm_spi_read_rdy_start end\n");
 
 		if (status < 0 || term || hw_priv->bh_error){
-			printk("%s BH thread break %ld %d %d\n",__func__,status,term,hw_priv->bh_error);
+			atbm_printk_err("%s BH thread break %ld %d %d\n",__func__,status,term,hw_priv->bh_error);
 			break;
 		}
 
@@ -559,20 +560,20 @@ static int spi_atbm_bh(void *arg)
 				//	"Timeout waiting for TX confirm.\n");
 				prink_test++;
 				if(prink_test <10){
-					printk("atbm_bh: Timeout waiting for TX confirm. hw_bufs_used %d\n",hw_priv->hw_bufs_used);
+					atbm_printk_bus("atbm_bh: Timeout waiting for TX confirm. hw_bufs_used %d\n",hw_priv->hw_bufs_used);
 				}
 				//break;
 			}
 		} else if (!status) {
-			printk("%s %d ++ !!\n",__func__,__LINE__);
+			atbm_printk_bus("%s %d ++ !!\n",__func__,__LINE__);
 			if (!hw_priv->device_can_sleep
 					&& !atomic_read(&hw_priv->recent_scan)) {
-				bh_printk(KERN_DEBUG "[BH] Device wakedown. Timeout.\n");
+				bh_printk( "[BH] Device wakedown. Timeout.\n");
 			}
 			continue;
 		} else if (suspend) {
-			printk( "[BH] Device suspend.\n");
-			printk("%s %d ++ !!\n",__func__,__LINE__);
+			atbm_printk_bus( "[BH] Device suspend.\n");
+			atbm_printk_bus("%s %d ++ !!\n",__func__,__LINE__);
 			powersave_enabled = 1;
 			atbm_hw_vif_read_lock(&hw_priv->vif_list_lock);
 			atbm_for_each_vif_safe(hw_priv, priv, i) {
@@ -582,7 +583,7 @@ static int spi_atbm_bh(void *arg)
 			}
 			atbm_hw_vif_read_unlock(&hw_priv->vif_list_lock);
 			if (powersave_enabled) {
-				bh_printk(KERN_DEBUG "[BH] No Device wakedown. Suspend.\n");
+				bh_printk( "[BH] No Device wakedown. Suspend.\n");
 			}
 
 			atomic_set(&hw_priv->bh_suspend, ATBM_APOLLO_BH_SUSPENDED);
@@ -591,12 +592,11 @@ static int spi_atbm_bh(void *arg)
 					ATBM_APOLLO_BH_RESUME == atomic_read(
 						&hw_priv->bh_suspend));
 			if (status < 0) {
-				wiphy_err(hw_priv->hw->wiphy,
-					"%s: Failed to wait for resume: %ld.\n",
+				atbm_printk_err("%s: Failed to wait for resume: %ld.\n",
 					__func__, status);
 				break;
 			}
-			printk( "[BH] Device resume.\n");
+			atbm_printk_bus( "[BH] Device resume.\n");
 			atomic_set(&hw_priv->bh_suspend, ATBM_APOLLO_BH_RESUMED);
 			//wake_up(&hw_priv->bh_evt_wq);
 			//atomic_add(1, &hw_priv->bh_rx);
@@ -612,7 +612,7 @@ static int spi_atbm_bh(void *arg)
 out:
 	if (!term) {
 		int loop = 3;
-		printk("%s %d ++ !!\n",__func__,__LINE__);
+		atbm_printk_bus("%s %d ++ !!\n",__func__,__LINE__);
 		atbm_dbg(ATBM_APOLLO_DBG_ERROR, "[BH] Fatal error, exitting.\n");
 
 		hw_priv->bh_error = 1;
@@ -646,7 +646,7 @@ out:
 		}
 #endif
 	}
-	printk("atbm_wifi_BH_thread stop ++\n");
+	atbm_printk_bus("atbm_wifi_BH_thread stop ++\n");
 	/*
 	add this code just because 'linux kernel' need kthread not exit ,
 	before kthread_stop func call,
@@ -657,7 +657,7 @@ out:
 		}
 		schedule_timeout_uninterruptible(msecs_to_jiffies(100));
 	}
-	printk("atbm_wifi_BH_thread stop --\n");
+	atbm_printk_bus("atbm_wifi_BH_thread stop --\n");
 	return 0;
 }
 

@@ -50,9 +50,8 @@ int atbm_smart_scan_start(struct atbm_vif *priv, struct wsm_scan *scan)
         }
         return ret;
 }
-void atbm_smart_scan_work(struct work_struct *work)
+void atbm_smart_scan_work(struct atbm_work_struct *work)
 {
-	//printk("%s:%d\n",__func__,__LINE__);
 	struct atbm_common *hw_priv = container_of(work,
                                                 struct atbm_common,
                                                 scan.smartwork);
@@ -76,12 +75,10 @@ void atbm_smart_scan_work(struct work_struct *work)
 
         /*TODO: COMBO: introduce locking so vif is not removed in meanwhile */
 
-    	if (!priv) {
-            wiphy_dbg(hw_priv->hw->wiphy, "[SCAN] interface removed, "
-                      "ignoring scan work\n");
-          printk("%s:[SCAN] interface removed\n",__func__);
-            return ;
-    	}
+	if (!priv) {
+	 	atbm_printk_scan("%s:[SCAN] interface removed\n",__func__);
+	    return ;
+	}
 		
 	hw_priv->scan.status = 0;
 	hw_priv->scan.if_id = 0;
@@ -108,7 +105,6 @@ void atbm_smart_scan_work(struct work_struct *work)
 	if(hw_priv->scan.scan_smartconfig){
 		scan.numOfProbeRequests = 0; 
 		scan.scanFlags |= WSM_FLAG_START_SMARTCONFIG; 
-		//printk("START_SMARTCONFIG scan\n");
 		
 	}
 	scan.ch = atbm_kzalloc(sizeof(struct wsm_scan_ch[scan.numOfChannels]),GFP_KERNEL);
@@ -141,7 +137,7 @@ fail:
         atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.smartwork);
         return ;
 }
-void atbm_smart_setchan_work(struct work_struct *work)
+void atbm_smart_setchan_work(struct atbm_work_struct *work)
 {	
 	struct atbm_common *hw_priv = container_of(work,
                                                 struct atbm_common, 
@@ -152,12 +148,12 @@ void atbm_smart_setchan_work(struct work_struct *work)
 		.channelNumber = hw_priv->st_configchannel,	// channel number
 		.channelType = NL80211_CHAN_HT20,	// channel type
 		};
-		printk("hw_priv->st_configchannel = %d flag %x\n", hw_priv->st_configchannel,arg.flag);
+		atbm_printk_smt("hw_priv->st_configchannel = %d flag %x\n", hw_priv->st_configchannel,arg.flag);
 		wsm_set_chantype_func(hw_priv,&arg,0);
 }
 
 
-void atbm_smart_stop_work(struct work_struct *work)
+void atbm_smart_stop_work(struct atbm_work_struct *work)
 {
 	struct atbm_common *hw_priv = container_of(work,
                                                 struct atbm_common, 
@@ -169,7 +165,7 @@ void atbm_smart_stop_work(struct work_struct *work)
 	hw_priv->st_status = CONFIG_ST_IDLE;
 	hw_priv->scan.scan_smartconfig = 0;
 	reset.reset_statistics = true;
-	del_timer_sync(&hw_priv->smartconfig_expire_timer);  
+	atbm_del_timer_sync(&hw_priv->smartconfig_expire_timer);  
 	if(st_payload_buf){
 		 atbm_kfree(st_payload_buf);
 		 st_payload_buf= NULL;
@@ -212,45 +208,42 @@ int smartconfig_start(struct atbm_common *hw_priv,struct smartconfig_config * st
 	//printk("%s:%d\n",__func__,__LINE__);
 	//int Istate=0;
 	if(st_cfg == NULL){
-		printk("unsupport smartconfig st_cfg NULL!");
+		atbm_printk_err("unsupport smartconfig st_cfg NULL!");
 		return CONFIG_ST_STARTCONFIG_ERR;
 	}
 	if((st_cfg->magic_cnt<1)||(st_cfg->magic_cnt>10)){
-		printk("unsupport smartconfig imagic_cnt %d!",st_cfg->magic_cnt);
+		atbm_printk_err("unsupport smartconfig imagic_cnt %d!",st_cfg->magic_cnt);
 		return CONFIG_ST_STARTCONFIG_ERR;
 	}
 	if((st_cfg->magic_time<20)||(st_cfg->magic_time>500)){
-		printk("unsupport smartconfig magic_time!");
+		atbm_printk_err("unsupport smartconfig magic_time!");
 		return CONFIG_ST_STARTCONFIG_ERR;
 	}
 	if((st_cfg->payload_time<500)||(st_cfg->payload_time>30000)){
-		printk("unsupport smartconfig payload_time!");
+		atbm_printk_err("unsupport smartconfig payload_time!");
 		return CONFIG_ST_STARTCONFIG_ERR;
 	}
 	 memcpy(&hw_priv->st_cfg,st_cfg,sizeof(struct smartconfig_config ));
 	 /*disconnect AP*/
 	// AT_WDisConnect(NULL);
-	 mod_timer(&hw_priv->smartconfig_expire_timer,st_cfg->payload_time + st_cfg->magic_time*14);
-	 printk("st_cfg->payload_time + st_cfg->magic_time*14 = %d\n", (st_cfg->payload_time + st_cfg->magic_time*14));
+	 atbm_mod_timer(&hw_priv->smartconfig_expire_timer,st_cfg->payload_time + st_cfg->magic_time*14);
+	 atbm_printk_err("st_cfg->payload_time + st_cfg->magic_time*14 = %d\n", (st_cfg->payload_time + st_cfg->magic_time*14));
 	 if(hw_priv->scan_ret.info){
 		spin_lock_bh(&hw_priv->spinlock_smart);
-		//atbm_kfree(hw_priv->scan_ret.info);
 		hw_priv->scan_ret.info = NULL;
 		hw_priv->scan_ret.len =0;
 		spin_unlock_bh(&hw_priv->spinlock_smart);
 	 }	
-	 //printk("%s:%d\n",__func__,__LINE__);
 	 smartconfig_scan_start(hw_priv);
 	 return CONFIG_ST_START;
 }
 
 int atbm_smartconfig_start(struct atbm_common *hw_priv,int enable)
 {	
-	//printk("%s:%d\n",__func__,__LINE__);
 	if (enable){
-		printk("%s %d\n", __func__, hw_priv->scan.scan_smartconfig);
+		atbm_printk_smt("%s %d\n", __func__, hw_priv->scan.scan_smartconfig);
 		if(hw_priv->scan.scan_smartconfig){
-			printk("scan_smartconfig now!please try later!\n");
+			atbm_printk_smt("scan_smartconfig now!please try later!\n");
 			return 0 ;
 	   }else
 	   {
@@ -270,7 +263,7 @@ int atbm_smartconfig_start(struct atbm_common *hw_priv,int enable)
 }
 int atbm_smartconfig_stop(struct atbm_common *hw_priv)
 {	
-	printk("%s:%d\n",__func__,__LINE__);
+	atbm_printk_smt("%s:%d\n",__func__,__LINE__);
 	if(hw_priv->scan.scan_smartconfig){
 		smartconfig_stop(hw_priv);
    }
@@ -294,7 +287,7 @@ int smartconfig_payload_timeout(int ms)
 }
 int smartconfig_stop(struct atbm_common *hw_priv)
 {
-	printk("%s:%d\n",__func__,__LINE__);
+	atbm_printk_smt("%s:%d\n",__func__,__LINE__);
 	atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.smartstopwork);
 	return hw_priv->st_status;
 }
@@ -305,7 +298,7 @@ int smartconfig_status(struct atbm_common *hw_priv)
 
 int smartconfig_start_timer_func(struct atbm_common *hw_priv )
 {		
-	printk("smartconfig timeout\n");
+	atbm_printk_smt("smartconfig timeout\n");
 
 	if(hw_priv->scan.scan_smartconfig){
 		//cancel smartconfig
@@ -320,7 +313,7 @@ int smartconfig_magic_scan_done(struct atbm_common *hw_priv)
 	//printk("smartconfig_magic_scan_done %d\n",hw_priv->st_status);
 
 	if(hw_priv->st_status == CONFIG_ST_SWITCH_PAYLOAD_CH ){
-		printk("st_configchannel %d\n",hw_priv->st_configchannel);
+		atbm_printk_smt("st_configchannel %d\n",hw_priv->st_configchannel);
 		atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.smartsetChanwork);
 		hw_priv->st_status = CONFIG_ST_GET_PAYLOAD;
 	}
@@ -425,7 +418,7 @@ int smartconfig_scan(struct atbm_common *hw_priv)
 	};
 	priv = ABwifi_hwpriv_to_vifpriv(hw_priv, hw_priv->scan.if_id);
 	if (unlikely(!priv)) {
-		printk("%s:%d\n",__func__,__LINE__);
+		atbm_printk_err("%s:%d\n",__func__,__LINE__);
 		return 0;
 	}
 	atbm_priv_vif_list_read_unlock(&priv->vif_lock);
@@ -526,7 +519,6 @@ int start_connect_ap(struct atbm_vif*priv,u8 *essid,int essid_len,u8 *key,int ke
 	}
 	if (config->key_mgmt & WPA_KEY_MGMT_PSK) {
 		
-		//计算PMK
 		//pbkdf2_sha1((const char*)ssid->psk, (const char*)ssid->ssid, ssid->ssid_len, 8, wpa_s->wpa->pmksa[0].id, PMKID_LEN);
 		config->psk_set = 0;
 		if(config->psk_set){
@@ -539,12 +531,6 @@ int start_connect_ap(struct atbm_vif*priv,u8 *essid,int essid_len,u8 *key,int ke
 		config->psk_set = 1;
 	}
 	
-	/*
-	**********************************
-	启动scannng流程，侦听beacon
-	或发送probe
-	**********************************
-	*/
 	smartconfig_scan(priv);
 	//os_free(priv->extra_ie);
 	priv->extra_ie = NULL;
@@ -573,12 +559,12 @@ int smartconfig_step_1(struct atbm_common *hw_priv,struct sk_buff *skb,int chann
 	if((flag == FLAG_ORIGINAL_VALUE) && (!memcmp(atbm_smart_config_magic_mac[0],&data[4],6))){
 		flag = FLAG_RECEIVE_BROADCAST;
 		CNT_BROAD = ORIGINAL_NUM_OF_CNT;
-		printk("smartconfig:FLAG_RECEIVE_BROADCAST \n");
+		atbm_printk_smt("smartconfig:FLAG_RECEIVE_BROADCAST \n");
 	}
 	else if((flag == FLAG_ORIGINAL_VALUE) && (CNT_BROAD > WAIT_NUM_OF_CNT)){
 		flag = FLAG_RECEIVE_MULTICAST;
 		CNT_BROAD = ORIGINAL_NUM_OF_CNT;
-		printk("smartconfig:FLAG_RECEIVE_MULTICAST \n");
+		atbm_printk_smt("smartconfig:FLAG_RECEIVE_MULTICAST \n");
 	}
 
 	//printk("******** counter: %d********\n", CNT_BROAD);
@@ -592,7 +578,7 @@ int smartconfig_step_1(struct atbm_common *hw_priv,struct sk_buff *skb,int chann
 		if(fun_recv_magic(hw_priv,len)/*magic done*/){
 			hw_priv->st_status = CONFIG_ST_SWITCH_PAYLOAD_CH;
 			hw_priv->st_configchannel = channel;
-			printk("FLAG_RECEIVE_BROADCAST\n");
+			atbm_printk_smt("FLAG_RECEIVE_BROADCAST\n");
 		}
 	}
 	else if((flag == FLAG_RECEIVE_MULTICAST) && (!memcmp(atbm_smart_config_magic_mac[0],&data[4+12],6))){
@@ -642,7 +628,7 @@ int smartconfig_step_2(struct atbm_common *hw_priv,struct sk_buff *skb)
 	if((!memcmp(atbm_smart_config_magic_mac[3], &data[4], 6)))
 		return -1;
 	
-	printk("data: %x %x %x %x %x %x\n",data[4],data[4+1],data[4+2],data[4+3],data[4+4],data[4+5]);	
+	atbm_printk_smt("data: %x %x %x %x %x %x\n",data[4],data[4+1],data[4+2],data[4+3],data[4+4],data[4+5]);	
 	//printk("data: %x %x %x %x %x %x\n",data[4+12],data[4+13],data[4+14],data[4+15],data[4+16],data[4+17]);
 	//printk("step_2_rx len %x \n",len);
 #if 1
@@ -654,7 +640,7 @@ int smartconfig_step_2(struct atbm_common *hw_priv,struct sk_buff *skb)
 		{
 			turn_id = data[4+5] - atbm_smart_config_magic_mac[2][5];
 			//iot_printf("1\n");
-			printk("receive broadcast\n");
+			atbm_printk_smt("receive broadcast\n");
 		}
 	}
 	else if(flag == FLAG_RECEIVE_MULTICAST){
@@ -665,7 +651,7 @@ int smartconfig_step_2(struct atbm_common *hw_priv,struct sk_buff *skb)
 		{
 			turn_id = data[4+17] - atbm_smart_config_magic_mac[2][5];
 			//iot_printf("2\n");
-			printk("receive multicast\n");
+			atbm_printk_smt("receive multicast\n");
 		}
 	}
 #else
@@ -677,10 +663,10 @@ int smartconfig_step_2(struct atbm_common *hw_priv,struct sk_buff *skb)
 #endif
 		
 
-	printk("step_2_rx len %d %d,turn_id = %d\n",len,data[4+17],turn_id);
+	atbm_printk_smt("step_2_rx len %d %d,turn_id = %d\n",len,data[4+17],turn_id);
 
 	if( fun_recv_payload((short)(len-baselen+1), turn_id)== CONFIG_ST_DONE_SUCCESS/*payload done*/){
-		printk("SMART_SUCCESS \n");
+		atbm_printk_smt("SMART_SUCCESS \n");
 		//cancel smartconfig
 		atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.smartstopwork);
 		hw_priv->st_status = CONFIG_ST_DONE_SUCCESS;
@@ -709,7 +695,7 @@ void atbm_smartconfig_expire_timer(unsigned long arg)
 	struct atbm_common *hw_priv =
 		(struct atbm_common *)arg;
 	if (atomic_read(&hw_priv->scan.in_progress)){
-		printk("%s:%d\n",__func__,__LINE__);
+		atbm_printk_smt("%s:%d\n",__func__,__LINE__);
 		//cancel smartconfig
 		atbm_hw_priv_queue_work(hw_priv, &hw_priv->scan.smartstopwork);
 	}

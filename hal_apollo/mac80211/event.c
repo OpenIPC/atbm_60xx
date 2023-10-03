@@ -19,14 +19,15 @@ void mac80211_ev_michael_mic_failure(struct ieee80211_sub_if_data *sdata, int ke
 				     struct ieee80211_hdr *hdr, const u8 *tsc,
 				     gfp_t gfp)
 {
-	#ifndef ATBM_PRIVATE_IE
+#if 0
+//#ifndef ATBM_PRIVATE_IE
 	cfg80211_michael_mic_failure(sdata->dev, hdr->addr2,
 				     (hdr->addr1[0] & 0x01) ?
 				     NL80211_KEYTYPE_GROUP :
 				     NL80211_KEYTYPE_PAIRWISE,
 				     keyidx, tsc, gfp);
-	#else
+#else
 	#pragma message "IPC not support mic failure"
-	printk(KERN_ERR "%s:IPC not support mic failure\n",__func__);
-	#endif
+	atbm_printk_err( "IPC not support mic failure\n");
+#endif
 }

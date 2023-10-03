@@ -1,5 +1,5 @@
 #ifndef DBG_EVENT_H
-#define DBG_EVENT_H
+//#define DBG_EVENT_H
 #ifdef DBG_EVENT_LOG
 void ELOG_INIT(void);
 void ELOG_Add(u8 id,u32 data);

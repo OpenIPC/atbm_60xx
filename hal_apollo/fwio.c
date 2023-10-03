@@ -33,10 +33,17 @@
 #include "bh.h"
 #include "dcxo_dpll.h"
 
-
+#ifdef ATBM_USE_SAVED_FW
+#pragma message("Suspend Save Firmware")
+#endif
+#ifdef CONFIG_USE_FW_H
+#pragma message("Use Firmware.h")
+#endif
 static char *fw = FIRMWARE_DEFAULT_PATH;
+#if 0
 module_param(fw, charp, 0644);
 MODULE_PARM_DESC(fw, "Override platform_data firmware file");
+#endif
 #pragma message(FIRMWARE_DEFAULT_PATH)
 
 
@@ -59,7 +66,6 @@ static struct firmware_altobeam atbm_fw;
 
 void atbm_release_firmware(void)
 {
-	printk("atbm_release_firmware\n");
 	if(atbm_fw.fw_dccm)
 	{
 		vfree(atbm_fw.fw_dccm);
@@ -73,7 +79,6 @@ void atbm_release_firmware(void)
 }
 int atbm_init_firmware(void)
 {
-	printk("atbm_init_firmware\n");
 	memset(&atbm_fw,0,sizeof(struct firmware_altobeam));
 	return 0;
 }
@@ -83,13 +88,13 @@ int atbm_set_firmare(struct firmware_altobeam *fw)
 #ifdef ATBM_USE_SAVED_FW
 	if(!fw || (!fw->fw_dccm&&!fw->fw_iccm))
 	{
-		printk(KERN_ERR "fw is err\n");
+		atbm_printk_err(KERN_ERR "fw is err\n");
 		return -1;
 	}
 
 	if(atbm_fw.fw_dccm || atbm_fw.fw_iccm)
 	{
-		printk(KERN_ERR "atbm_fw has been set\n");
+		atbm_printk_err("atbm_fw has been set\n");
 		return -1;
 	}
 	memcpy(&atbm_fw.hdr,&fw->hdr,sizeof(struct firmware_headr));
@@ -97,10 +102,10 @@ int atbm_set_firmare(struct firmware_altobeam *fw)
 	if(atbm_fw.hdr.iccm_len)
 	{
 		atbm_fw.fw_iccm = vmalloc(atbm_fw.hdr.iccm_len);
-		printk(KERN_ERR "%s:fw_iccm(%p)\n",__func__,atbm_fw.fw_iccm);
+		atbm_printk_err("%s:fw_iccm(%p)\n",__func__,atbm_fw.fw_iccm);
 		if(!atbm_fw.fw_iccm)
 		{
-			printk(KERN_ERR "alloc atbm_fw.fw_iccm err\n");
+			atbm_printk_err("alloc atbm_fw.fw_iccm err\n");
 			goto err;
 		}
 		memcpy(atbm_fw.fw_iccm,fw->fw_iccm,atbm_fw.hdr.iccm_len);
@@ -110,10 +115,10 @@ int atbm_set_firmare(struct firmware_altobeam *fw)
 	{
 		atbm_fw.fw_dccm= vmalloc(atbm_fw.hdr.dccm_len);
 		
-		printk(KERN_ERR "%s:fw_dccm(%p)\n",__func__,atbm_fw.fw_dccm);
+		atbm_printk_err("%s:fw_dccm(%p)\n",__func__,atbm_fw.fw_dccm);
 		if(!atbm_fw.fw_dccm)
 		{
-			printk(KERN_ERR "alloc atbm_fw.fw_dccm err\n");
+			atbm_printk_err("alloc atbm_fw.fw_dccm err\n");
 			goto err;
 		}
 		memcpy(atbm_fw.fw_dccm,fw->fw_dccm,atbm_fw.hdr.dccm_len);
@@ -146,7 +151,6 @@ int atbm_get_fw(struct firmware_altobeam *fw)
 	memcpy(&fw->hdr,&atbm_fw.hdr,sizeof(struct firmware_headr));
 	fw->fw_iccm = atbm_fw.fw_iccm;
 	fw->fw_dccm = atbm_fw.fw_dccm;
-	printk("%s:get fw\n",__func__);
 	return 0;
 }
 
@@ -188,7 +192,7 @@ static int atbm_load_firmware_generic(struct atbm_common *priv, u8 *data,u32 siz
 #endif //#ifndef HW_DOWN_FW
 
 	/*  downloading loop */
-	printk(KERN_ERR "%s: addr %x: len %x\n",__func__,addr,size);
+	atbm_printk_init( "%s: addr %x: len %x\n",__func__,addr,size);
 	for (put = 0; put < size ;put += DOWNLOAD_BLOCK_SIZE) {
 		u32 tx_size;
 
@@ -204,7 +208,6 @@ static int atbm_load_firmware_generic(struct atbm_common *priv, u8 *data,u32 siz
 			atbm_dbg(ATBM_APOLLO_DBG_ERROR,
 				"%s: can't write block at line %d.\n",
 				__func__, __LINE__);
-			printk(KERN_ERR "%s:put = 0x%x\n",__func__,put);
 			goto error;
 		}
 	} /* End of bootloader download loop */
@@ -215,20 +218,99 @@ error:
 
 
 }
+void  atbm_efuse_read_byte(struct atbm_common *priv,u32 byteIndex, u32 *value)
+{
+	//HW_WRITE_REG(0x16b00000, (byteIndex<<8));
+	//*value = HW_READ_REG(0x16b00004);	
+	
+	atbm_direct_write_reg_32(priv,0x16b00000, (byteIndex<<8));
+	atbm_direct_read_reg_32(priv,0x16b00004,value);
+}
+
+u32 atbm_efuse_read_bit(struct atbm_common *priv,u32 bitIndex)
+{
+	u32	efuseBitIndex = bitIndex;
+	u32 byteIndex;
+	u32 value = 0;
+
+	{
+		byteIndex = efuseBitIndex / 8;
+		atbm_efuse_read_byte(priv,byteIndex, &value);
+	}
+	value = value >> (efuseBitIndex % 8);
+	value &= 0x1;
+	return value;
+}
+bool atbm_check_6012B(struct atbm_common *priv)
+{
+	if ((atbm_efuse_read_bit(priv,152) == 1) && (atbm_efuse_read_bit(priv,154) == 1))
+	{
+		printk("Get 6012B UID Success!!\n");
+		return 1;
+	}
+	return 0;
+}
+
+
+
+void  atbm_HwGetChipType(struct atbm_common *priv)
+{
+	u32 chipver = 0;
+
+	atbm_direct_read_reg_32(priv,0x0acc017c,&chipver);
+    chipver&=0xff;
+	
+	switch(chipver)
+	{
+		case 0x14:	
+			priv->chip_version = APOLLO_F;	
+			break;
+		case 0x24:	
+		case 0x25:	
+			//strHwChipFw = ("AthenaB.bin");
+			priv->chip_version = ATHENA_B;
+			break;
+		case 0x45:	
+		case 0x46:	
+		case 0x47:	
+			priv->chip_version = ARES_A;
+			break;	
+		case 0x49:
+			priv->chip_version = ARES_B;
+
+			if(atbm_check_6012B(priv))
+				priv->chip_version = ARES_6012B;
+	
+			break;
+		case 0x64:
+		case 0x65:
+			priv->chip_version = HERA;		
+			break;
+		default:
+			//g_wifi_chip_type = ATHENA_B;
+			atbm_printk_always("%s, <ERROR> cannot read chip id\n",__func__ );
+		
+		break;
+	}
+
+	atbm_printk_always("%s, chipver=0x%x, g_wifi_chip_type[%d]\n",__func__, chipver,priv->chip_version );
+}
 
 char * atbm_HwGetChipFw(struct atbm_common *priv)
 {
+#if 0
 	u32 chipver = 0;
-	char * strHwChipFw;
+#endif
+	char * strHwChipFw = NULL;
 
 	if(fw)
 	{
-		printk(KERN_ERR "%s, use module_param fw [%s]\n",__func__, fw );
+		atbm_printk_always("fw [%s]\n", fw );
 	 	return fw;
 	}
-
+#if 0
 	atbm_direct_read_reg_32(priv,0x0acc017c,&chipver);
-	chipver&=0x3f;
+	
 	switch(chipver)
 	{
 		case 0x0:	
@@ -272,27 +354,41 @@ char * atbm_HwGetChipFw(struct atbm_common *priv)
 		break;
 	}
 
-	printk("%s, chipver=0x%x, use fw [%s]\n",__func__, chipver,strHwChipFw );
-
+	atbm_printk_always("%s, chipver=0x%x, use fw [%s]\n",__func__, chipver,strHwChipFw );
+#endif
 	return strHwChipFw;
 }
 
 //#define TEST_DCXO_CONFIG move to makefile
-//#define USED_FW_FILE
+#ifndef CONFIG_USE_FW_H
+#define USED_FW_FILE
+#endif
 #ifdef USED_FW_FILE
-
 /*check if fw headr ok*/
 static int atbm_fw_checksum(struct firmware_headr * hdr)
 {
 	return 1;
 }
 #else
-#include "firmware.h"
+#ifdef USB_BUS
+#include "firmware_usb.h"
+#ifdef SUPPORT_ATBM6012B
+#include "firmware_usb_6012b.h"
+#endif
+
+#endif
+#ifdef SDIO_BUS
+#include "firmware_sdio.h"
+#endif
+#ifdef SPI_BUS
+#include "firmware_spi.h"
+#endif
 #endif
 #ifdef CONFIG_PM_SLEEP
+#pragma message("CONFIG_PM_SLEEP")
 int atbm_cache_fw_before_suspend(struct device	 *pdev)
 {
-#ifdef USED_FW_FILE
+#if defined (USED_FW_FILE) && defined(ATBM_USE_SAVED_FW)
 	int ret = 0;
 	const char *fw_path= fw;
 	const struct firmware *firmware = NULL;
@@ -303,13 +399,13 @@ int atbm_cache_fw_before_suspend(struct device	 *pdev)
 		goto error2;
 	}
 	if(FW_IS_READY){
-		printk(KERN_ERR "atbm_fw ready\n");
+		atbm_printk_err("atbm_fw ready\n");
 		goto error2;
 	}
 	
 	ret = request_firmware(&firmware, fw_path, pdev);
 	if(ret){
-		printk(KERN_ERR "%s:request_firmware err\n",__func__);
+		atbm_printk_err("request_firmware err\n");
 		goto error2;
 	}
 	if(*(int *)firmware->data == ALTOBEAM_WIFI_HDR_FLAG){
@@ -350,11 +446,11 @@ int atbm_cache_fw_before_suspend(struct device	 *pdev)
 	memcpy(&atbm_fw.hdr,&fw_altobeam.hdr,sizeof(struct firmware_headr));
 	if(atbm_fw.hdr.iccm_len)
 	{
-		atbm_fw.fw_iccm = atbm_kzalloc(atbm_fw.hdr.iccm_len,GFP_KERNEL);
+		atbm_fw.fw_iccm = vmalloc(atbm_fw.hdr.iccm_len);
 		
 		if(!atbm_fw.fw_iccm)
 		{
-			printk(KERN_ERR "alloc atbm_fw.fw_iccm err\n");
+			atbm_printk_err( "alloc atbm_fw.fw_iccm err\n");
 			goto error1;
 		}
 		memcpy(atbm_fw.fw_iccm,fw_altobeam.fw_iccm,atbm_fw.hdr.iccm_len);
@@ -362,35 +458,35 @@ int atbm_cache_fw_before_suspend(struct device	 *pdev)
 
 	if(atbm_fw.hdr.dccm_len)
 	{
-		atbm_fw.fw_dccm= atbm_kzalloc(atbm_fw.hdr.dccm_len,GFP_KERNEL);
+		atbm_fw.fw_dccm= vmalloc(atbm_fw.hdr.dccm_len);
 
 		if(!atbm_fw.fw_dccm)
 		{
-			printk(KERN_ERR "alloc atbm_fw.fw_dccm err\n");
+			atbm_printk_err("alloc atbm_fw.fw_dccm err\n");
 			goto error1;
 		}
 		memcpy(atbm_fw.fw_dccm,fw_altobeam.fw_dccm,atbm_fw.hdr.dccm_len);
 	}
-	printk(KERN_ERR "%s:cached fw\n",__func__);
+	atbm_printk_always("%s:cached fw\n",__func__);
 	release_firmware(firmware);
 	return 0;
 error1:
 	
-	printk(KERN_ERR "%s:error1\n",__func__);
+	atbm_printk_err("%s:error1\n",__func__);
 	release_firmware(firmware);
 	if(atbm_fw.fw_iccm)
 	{
-		atbm_kfree(atbm_fw.fw_iccm);
+		vfree(atbm_fw.fw_iccm);
 		atbm_fw.fw_iccm = NULL;
 	}
 
 	if(atbm_fw.fw_dccm)
 	{
-		atbm_kfree(atbm_fw.fw_dccm);
+		vfree(atbm_fw.fw_dccm);
 		atbm_fw.fw_dccm = NULL;
 	}
 error2:
-	printk(KERN_ERR "%s:error2\n",__func__);
+	atbm_printk_err("%s:error2\n",__func__);
 	return ret;
 #else
 	return 0;
@@ -412,7 +508,7 @@ loadfw:
 	atbm_ahb_write_32(priv,0x18e00014,0x200);
 	atbm_ahb_read_32(priv,0x18e00014,&val32_1);
 	//atbm_ahb_read_32(priv,0x16400000,&testreg_uart);
-	printk("0x18e000e4-->%08x %08x\n",val32_1);
+	atbm_printk_always("0x18e000e4-->%08x %08x\n",val32_1);
 #endif//TEST_DCXO_CONFIG
 	if(!FW_IS_READY)
 	{
@@ -464,12 +560,30 @@ loadfw:
 		}
 #else //USED_FW_FILE
 		{
-		atbm_dbg(ATBM_APOLLO_DBG_ERROR,"%s: used firmware.h=\n", __func__);
-		fw_altobeam.hdr.iccm_len = sizeof(fw_code);
-		fw_altobeam.hdr.dccm_len = sizeof(fw_data);
-		
-		fw_altobeam.fw_iccm = &fw_code[0];
-		fw_altobeam.fw_dccm = &fw_data[0];
+	
+			/*
+				 chip type select different fw
+			*/
+#ifdef SUPPORT_ATBM6012B
+	
+				if(priv->chip_version == ARES_6012B){//arsB 	
+					atbm_dbg(ATBM_APOLLO_DBG_ERROR,"used firmware_usb_6012b.h=\n");
+					fw_altobeam.hdr.iccm_len = sizeof(fw_code_6012b);
+					fw_altobeam.hdr.dccm_len = sizeof(fw_data_6012b);
+					
+					fw_altobeam.fw_iccm = &fw_code_6012b[0];
+					fw_altobeam.fw_dccm = &fw_data_6012b[0];
+				}else
+#endif
+
+			{
+					atbm_dbg(ATBM_APOLLO_DBG_ERROR,"used firmware.h=\n");
+					fw_altobeam.hdr.iccm_len = sizeof(fw_code);
+					fw_altobeam.hdr.dccm_len = sizeof(fw_data);
+					
+					fw_altobeam.fw_iccm = &fw_code[0];
+					fw_altobeam.fw_dccm = &fw_data[0];
+			}
 		}
 #endif //USED_FW_FILE
 		atbm_set_firmare(&fw_altobeam);
@@ -481,7 +595,7 @@ loadfw:
 			goto error;
 		}
 	}
-	atbm_dbg(ATBM_APOLLO_DBG_ERROR,"%s: START DOWNLOAD ICCM=========\n", __func__);
+	atbm_dbg(ATBM_APOLLO_DBG_ERROR,"START DOWNLOAD ICCM=========\n");
 
 	ret = atbm_load_firmware_generic(priv,fw_altobeam.fw_iccm,fw_altobeam.hdr.iccm_len,DOWNLOAD_ITCM_ADDR);
 	if(ret<0)
@@ -492,12 +606,12 @@ loadfw:
 	if(fw_altobeam.hdr.dccm_len > 0x9000)
 	fw_altobeam.hdr.dccm_len = 0x9000;
 	#endif
-	atbm_dbg(ATBM_APOLLO_DBG_ERROR,"%s: START DOWNLOAD DCCM=========\n", __func__);
+	atbm_dbg(ATBM_APOLLO_DBG_ERROR,"START DOWNLOAD DCCM=========\n");
 	ret = atbm_load_firmware_generic(priv,fw_altobeam.fw_dccm,fw_altobeam.hdr.dccm_len,DOWNLOAD_DTCM_ADDR);
 	if(ret<0)
 		goto error;
 
-	atbm_dbg(ATBM_APOLLO_DBG_MSG, "%s: FIRMWARE DOWNLOAD SUCCESS\n",__func__);
+	atbm_dbg(ATBM_APOLLO_DBG_MSG, "FIRMWARE DOWNLOAD SUCCESS\n");
 
 error:
 	if (ret<0){
@@ -516,15 +630,15 @@ int atbm_load_firmware(struct atbm_common *hw_priv)
 {
 	int ret;
 
-	printk("atbm_before_load_firmware++\n");
+	atbm_printk_init("atbm_before_load_firmware++\n");
 	ret = atbm_before_load_firmware(hw_priv);
 	if(ret <0)
 		goto out;
-	printk("atbm_start_load_firmware++\n");
+	atbm_printk_init("atbm_start_load_firmware++\n");
 	ret = atbm_start_load_firmware(hw_priv);
 	if(ret <0)
 		goto out;
-	printk("atbm_after_load_firmware++\n");
+	atbm_printk_init("atbm_after_load_firmware++\n");
 	ret = atbm_after_load_firmware(hw_priv);
 	if(ret <0){
 		goto out;

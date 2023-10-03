@@ -60,9 +60,9 @@ struct atbm_queue {
 	u8			queue_id;
 	u8			generation;
 #ifndef	ATBM_WIFI_QUEUE_LOCK_BUG
-	struct timer_list	gc;
+	struct atbm_timer_list	gc;
 #else
-	struct timer_list	gc[ATBM_WIFI_MAX_VIFS];
+	struct atbm_timer_list	gc[ATBM_WIFI_MAX_VIFS];
 	u8 timer_to_if_id[ATBM_WIFI_MAX_VIFS];
 #endif
 	unsigned long		ttl;
@@ -125,7 +125,9 @@ int atbm_queue_requeue(struct atbm_common *hw_priv,
 #else
 int atbm_queue_requeue(struct atbm_queue *queue, u32 packetID, bool check);
 #endif
+#if 0
 int atbm_queue_requeue_all(struct atbm_queue *queue);
+#endif
 #ifdef CONFIG_ATBM_APOLLO_TESTMODE
 int atbm_queue_remove(struct atbm_common *hw_priv,
 			struct atbm_queue *queue,

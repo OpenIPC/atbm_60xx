@@ -13,6 +13,7 @@
 #include <linux/err.h>
 #include <crypto/aes.h>
 
+
 #include <net/atbm_mac80211.h>
 #include "key.h"
 #include "aes_ccm.h"
@@ -148,3 +149,6 @@ void ieee80211_aes_key_free(struct crypto_cipher *tfm)
 {
 	crypto_free_cipher(tfm);
 }
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(5, 10, 60))
+MODULE_IMPORT_NS(CRYPTO_INTERNAL);
+#endif

@@ -224,6 +224,7 @@ void ieee80211_get_tkip_p2k(struct ieee80211_key_conf *keyconf,
  * @payload_len is the length of payload (_not_ including IV/ICV length).
  * @ta is the transmitter addresses.
  */
+ #if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 int ieee80211_tkip_encrypt_data(struct crypto_cipher *tfm,
 				struct ieee80211_key *key,
 				struct sk_buff *skb,
@@ -236,12 +237,31 @@ int ieee80211_tkip_encrypt_data(struct crypto_cipher *tfm,
 	return ieee80211_wep_encrypt_data(tfm, rc4key, 16,
 					  payload, payload_len);
 }
+#else
+int ieee80211_tkip_encrypt_data(struct arc4_ctx *ctx,
+				struct ieee80211_key *key,
+				struct sk_buff *skb,
+				u8 *payload, size_t payload_len)
+{
+	u8 rc4key[16];
+
+	ieee80211_get_tkip_p2k(&key->conf, skb, rc4key);
+
+	return ieee80211_wep_encrypt_data(ctx, rc4key, 16,
+					  payload, payload_len);
+}
+#endif
 
 /* Decrypt packet payload with TKIP using @key. @pos is a pointer to the
  * beginning of the buffer containing IEEE 802.11 header payload, i.e.,
  * including IV, Ext. IV, real data, Michael MIC, ICV. @payload_len is the
  * length of payload, including IV, Ext. IV, MIC, ICV.  */
-int ieee80211_tkip_decrypt_data(struct crypto_cipher *tfm,
+int ieee80211_tkip_decrypt_data(
+ #if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
+				struct crypto_cipher *tfm,
+ #else
+ 				struct arc4_ctx *ctx,
+ #endif
 				struct ieee80211_key *key,
 				u8 *payload, size_t payload_len, u8 *ta,
 				u8 *ra, int only_iv, int queue,
@@ -263,11 +283,11 @@ int ieee80211_tkip_decrypt_data(struct crypto_cipher *tfm,
 #ifdef CONFIG_MAC80211_ATBM_TKIP_DEBUG
 	{
 		int i;
-		printk(KERN_DEBUG "TKIP decrypt: data(len=%zd)", payload_len);
+		atbm_printk_always( "TKIP decrypt: data(len=%zd)", payload_len);
 		for (i = 0; i < payload_len; i++)
-			printk(" %02x", payload[i]);
-		printk("\n");
-		printk(KERN_DEBUG "TKIP decrypt: iv16=%04x iv32=%08x\n",
+			atbm_printk_always(" %02x", payload[i]);
+		atbm_printk_always("\n");
+		atbm_printk_always("TKIP decrypt: iv16=%04x iv32=%08x\n",
 		       iv16, iv32);
 	}
 #endif
@@ -283,13 +303,13 @@ int ieee80211_tkip_decrypt_data(struct crypto_cipher *tfm,
 	     (iv32 == key->u.tkip.rx[queue].iv32 &&
 	      iv16 <= key->u.tkip.rx[queue].iv16))) {
 #ifdef CONFIG_MAC80211_ATBM_TKIP_DEBUG
-		printk(KERN_DEBUG "TKIP replay detected for RX frame from "
+		atbm_printk_debug( "TKIP replay detected for RX frame from "
 		       "%pM (RX IV (%08x,%04x) <= prev. IV (%08x,%04x)\n",
 		       ta,
 		       iv32, iv16, key->u.tkip.rx[queue].iv32,
 		       key->u.tkip.rx[queue].iv16);
 #endif
-		printk(KERN_DEBUG "tkip_decrypt_data,iv32(%d),iv16(%d),rx_iv32(%d),rx_iv16(%d)\n",iv32,iv16,key->u.tkip.rx[queue].iv32,key->u.tkip.rx[queue].iv16);
+		atbm_printk_debug("tkip_decrypt_data,iv32(%d),iv16(%d),rx_iv32(%d),rx_iv16(%d)\n",iv32,iv16,key->u.tkip.rx[queue].iv32,key->u.tkip.rx[queue].iv16);
 		return TKIP_DECRYPT_REPLAY;
 	}
 
@@ -307,16 +327,16 @@ int ieee80211_tkip_decrypt_data(struct crypto_cipher *tfm,
 		{
 			int i;
 			u8 key_offset = NL80211_TKIP_DATA_OFFSET_ENCR_KEY;
-			printk(KERN_DEBUG "TKIP decrypt: Phase1 TA=%pM"
+			atbm_printk_debug( "TKIP decrypt: Phase1 TA=%pM"
 			       " TK=", ta);
 			for (i = 0; i < 16; i++)
-				printk("%02x ",
+				atbm_printk_debug("%02x ",
 				       key->conf.key[key_offset + i]);
-			printk("\n");
-			printk(KERN_DEBUG "TKIP decrypt: P1K=");
+			atbm_printk_debug("\n");
+			atbm_printk_debug( "TKIP decrypt: P1K=");
 			for (i = 0; i < 5; i++)
-				printk("%04x ", key->u.tkip.rx[queue].p1k[i]);
-			printk("\n");
+				atbm_printk_debug("%04x ", key->u.tkip.rx[queue].p1k[i]);
+			atbm_printk_debug("\n");
 		}
 #endif
 	}
@@ -337,14 +357,18 @@ int ieee80211_tkip_decrypt_data(struct crypto_cipher *tfm,
 #ifdef CONFIG_MAC80211_ATBM_TKIP_DEBUG
 	{
 		int i;
-		printk(KERN_DEBUG "TKIP decrypt: Phase2 rc4key=");
+		atbm_printk_debug( "TKIP decrypt: Phase2 rc4key=");
 		for (i = 0; i < 16; i++)
-			printk("%02x ", rc4key[i]);
-		printk("\n");
+			atbm_printk_debug("%02x ", rc4key[i]);
+		atbm_printk_debug("\n");
 	}
 #endif
 
+ #if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
 	res = ieee80211_wep_decrypt_data(tfm, rc4key, 16, pos, payload_len - 12);
+ #else
+ 	res = ieee80211_wep_decrypt_data(ctx, rc4key, 16, pos, payload_len - 12);
+ #endif
  done:
 	if (res == TKIP_DECRYPT_OK) {
 		/*

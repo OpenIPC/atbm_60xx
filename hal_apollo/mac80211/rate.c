@@ -427,7 +427,7 @@ void rate_control_get_rate(struct ieee80211_sub_if_data *sdata,
 		{
 			if (g_atbm_rate_Ctl.my_index[index] > INDEX_MCS_MAX || g_atbm_rate_Ctl.my_index[index] < INDEX_MCS_MIN)
 			{
-				printk("Rate fix to %d wrong\n", g_atbm_rate_Ctl.my_index[index]);
+				atbm_printk_err("Rate fix to %d wrong\n", g_atbm_rate_Ctl.my_index[index]);
 				return;
 			}
 		}
@@ -435,7 +435,7 @@ void rate_control_get_rate(struct ieee80211_sub_if_data *sdata,
 		{
 			if (g_atbm_rate_Ctl.my_index[index] > INDEX_MAX || g_atbm_rate_Ctl.my_index[index] < INDEX_MIN)
 			{
-				printk("Rate fix to %d wrong\n", g_atbm_rate_Ctl.my_index[index]);
+				atbm_printk_err("Rate fix to %d wrong\n", g_atbm_rate_Ctl.my_index[index]);
 				return;
 			}
 		}
@@ -462,7 +462,7 @@ void rate_control_put(struct rate_control_ref *ref)
 {
 	kref_put(&ref->kref, rate_control_release);
 }
-#if defined(CONFIG_NL80211_TESTMODE) || defined(CONFIG_ATBM_IOCTRL)
+#if defined(CONFIG_NL80211_TESTMODE) && defined(CONFIG_ATBM_TEST_TOOL)
 
 
 enum altm_rate_control{
@@ -508,7 +508,7 @@ int rate_altm_control_test(struct wiphy *wiphy, void *data, int len)
 	else
 		msg = (struct altm_msg *)data;
 
-	printk("type:%d value:%d\n", msg->type, msg->value);
+	atbm_printk_always("type:%d value:%d\n", msg->type, msg->value);
 	switch (msg->type)
 	{
 		case ALTM_RATE_SET_FIX:
@@ -561,24 +561,24 @@ void frame_hexdump(char *prefix, u8 *data, int len)
 {
 
 	int i;
-	printk( "%s hexdump:\n", prefix);
+	atbm_printk_always( "%s hexdump:\n", prefix);
 	for (i = 0; i < len; i++) {
 	   if((i % 16)==0)
-		   printk("\n");
-	   printk("%02x ", data[i]);
+		   atbm_printk_always("\n");
+	   atbm_printk_always("%02x ", data[i]);
 
 	}
 }
 
 void ATBMWIFI_DBG_PRINT(const char * func,const int line) { \
 	if(test_debug_enable)
-		printk("%s %d \n",func,line);
+		atbm_printk_always("%s %d \n",func,line);
 }
 //EXPORT_SYMBOL(ATBMWIFI_DBG_PRINT);
 
 void ATBMWIFI_DBG_PRINT2(const char * func,const int line,unsigned int data) { \
 	if(test_debug_enable)
-		printk("%s %d data[%x]\n",func,line,data);
+		atbm_printk_always("%s %d data[%x]\n",func,line,data);
 }
 //EXPORT_SYMBOL(ATBMWIFI_DBG_PRINT2);
 
@@ -610,8 +610,7 @@ int atbm_ieee80211_init_rate_ctrl_alg(struct ieee80211_local *local,
 
 	ref = rate_control_alloc(name, local);
 	if (!ref) {
-		wiphy_warn(local->hw.wiphy,
-			   "Failed to select rate control algorithm,%s\n",name);
+		atbm_printk_warn("Failed to select rate control algorithm,%s\n",name);
 		return -ENOENT;
 	}
 

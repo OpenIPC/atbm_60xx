@@ -1,5 +1,6 @@
-#define DBG_EVENT_LOG 
+//#define DBG_EVENT_LOG 
 #ifdef DBG_EVENT_LOG
+#include <net/atbm_mac80211.h>
 #define ELOG_LEN 64
 struct elog_id{
 	unsigned int id;
@@ -35,7 +36,7 @@ void ELOG_INIT(void)
 	elog->start = 1;
 	elog->index = 0;
 	elog->len = len;
-	printk("ELOG_INIT len %d \n",elog->len);
+	atbm_printk_always("ELOG_INIT len %d \n",elog->len);
 
 }
 
@@ -56,7 +57,7 @@ void ELOG_Add(u8 id,u32 data)
 void ELOG_Stop(void)
 {
 	elog->start = 0;
-	printk("E_Stop\n");
+	atbm_printk_always("E_Stop\n");
 }
 void ELOG_Start(void)
 {
@@ -78,7 +79,7 @@ void ELOG_Show(void)
 	u32 tim = 0;
 	u8 index = elog->index;
 	int loop = 0;
-	printk("ELOG_Show id:data:tim (%d:%d)\n",elog->index,elog->len);
+	atbm_printk_always("ELOG_Show id:data:tim (%d:%d)\n",elog->index,elog->len);
 	do {
 		loop++;
 		if(index >= elog->len){			
@@ -88,12 +89,12 @@ void ELOG_Show(void)
 			index++;
 			continue;
 		}
-		printk("%02x|%08x|%06lx\n",elog->e_id[index].id,
+		atbm_printk_always("%02x|%08x|%06lx\n",elog->e_id[index].id,
 								elog->e_id[index].data,
 								(elog->e_id[index].tim-tim));
 		tim = elog->e_id[index].tim;
 		index++;
 	}while(loop < elog->len);//(index!=elog->index);
-	printk("ELOG_Show end\n");
+	atbm_printk_always("ELOG_Show end\n");
 }
 #endif //if DBG_EVENT_LOG

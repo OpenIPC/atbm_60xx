@@ -26,7 +26,7 @@
 #include "apollo.h"
 #include "debug.h"
 
-#define DBG_EVENT_LOG
+//#define DBG_EVENT_LOG
 #include "dbg_event.h"
 #ifdef CONFIG_WIRELESS_EXT
 extern unsigned int atbm_get_tx_power(void);
@@ -72,8 +72,10 @@ static const char *atbm_debug_mode(int mode)
 		return "monitor";
 	case NL80211_IFTYPE_STATION:
 		return "station";
+#ifdef CONFIG_ATBM_SUPPORT_IBSS
 	case NL80211_IFTYPE_ADHOC:
 		return "ad-hok";
+#endif
 	case NL80211_IFTYPE_MESH_POINT:
 		return "mesh point";
 	case NL80211_IFTYPE_AP:
@@ -179,6 +181,7 @@ int atbm_status_show_common(P_VDEBUG_SEQFILE seq, void *v)
 	struct list_head *item;
 	struct atbm_common *hw_priv = VDEBUG_PRIV(seq);
 	struct atbm_debug_common *d = hw_priv->debug;
+#ifdef CONFIG_ATBM_BA_STATUS
 	int ba_cnt, ba_acc, ba_cnt_rx, ba_acc_rx, ba_avg = 0, ba_avg_rx = 0;
 	bool ba_ena;
 
@@ -193,7 +196,7 @@ int atbm_status_show_common(P_VDEBUG_SEQFILE seq, void *v)
 	if (ba_cnt_rx)
 		ba_avg_rx = ba_acc_rx / ba_cnt_rx;
 	spin_unlock_bh(&hw_priv->ba_lock);
-
+#endif
 	VDEBUG_PUTS(seq,   "apollo wifi Wireless LAN driver status\n");
 	VDEBUG_PRINTF(seq, "Hardware:   %d.%d\n",
 		hw_priv->wsm_caps.hardwareId,
@@ -208,7 +211,7 @@ int atbm_status_show_common(P_VDEBUG_SEQFILE seq, void *v)
 		hw_priv->wsm_caps.firmwareCap);
 	if (hw_priv->channel)
 		VDEBUG_PRINTF(seq, "Channel:    %d%s\n",
-			hw_priv->channel->hw_value,
+			channel_hw_value(hw_priv->channel),
 			hw_priv->channel_switch_in_progress ?
 			" (switching)" : "");
 	VDEBUG_PRINTF(seq, "HT:         %s\n",
@@ -219,12 +222,15 @@ int atbm_status_show_common(P_VDEBUG_SEQFILE seq, void *v)
 		VDEBUG_PRINTF(seq, "AMPDU dens: %d\n",
 			atbm_ht_ampdu_density(&hw_priv->ht_info));
 	}
+#ifndef CONFIG_RATE_HW_CONTROL
 	spin_lock_bh(&hw_priv->tx_policy_cache.lock);
 	i = 0;
 	list_for_each(item, &hw_priv->tx_policy_cache.used)
 		++i;
 	spin_unlock_bh(&hw_priv->tx_policy_cache.lock);
+#endif
 	VDEBUG_PRINTF(seq, "RC in use:  %d\n", i);
+#ifdef CONFIG_ATBM_BA_STATUS
 	VDEBUG_PRINTF(seq, "BA stat:    %d, %d (%d)\n",
 		ba_cnt, ba_acc, ba_avg);
 	VDEBUG_PRINTF(seq, "BA RX stat:    %d, %d (%d)\n",
@@ -232,6 +238,7 @@ int atbm_status_show_common(P_VDEBUG_SEQFILE seq, void *v)
 	VDEBUG_PRINTF(seq, "Block ACK:  %s\n", ba_ena ? "on" : "off");
 
 	VDEBUG_PUTS(seq, "\n");
+#endif
 	for (i = 0; i < 4; ++i) {
 		atbm_queue_status_show(seq, &hw_priv->tx_queue[i]);
 		VDEBUG_PUTS(seq, "\n");
@@ -452,7 +459,7 @@ static ssize_t atbm_short_dump_write(struct file *file,
 
 	if (kstrtoul(buf, 10, &dump_size))
 		return -EINVAL;
-	printk(KERN_ERR "%s get %lu\n", __func__, dump_size);
+	atbm_printk_always("%s get %lu\n", __func__, dump_size);
 
 	priv->wsm_dump_max_size = dump_size;
 
@@ -693,101 +700,6 @@ void atbm_debug_release_priv(struct atbm_vif *priv)
 {
 	memset(&priv->debug,0,sizeof(priv->debug));
 }
-#ifndef CONFIG_ATBM_APOLLO_DEBUGFS
-extern struct atbm_common *g_hw_priv;
-static int code_cmd_fw_reload(struct atbm_common *hw_priv,const char *buf,int len);
-#define COMMON_CODE__FW_RELOAD		0
-#define COMMON_CODE__MAX			1
-struct common_store_code {
-	const char *label;
-	int (*code_cmd)(struct atbm_common *hw_priv,const char *buf,int len);
-};
-struct common_store_code common_store_code_buff[]={
-	[COMMON_CODE__FW_RELOAD] = {.label="fw_reload",.code_cmd = code_cmd_fw_reload},
-};
-static int code_cmd_fw_reload(struct atbm_common *hw_priv,const char *buf,int len)
-{
-#ifdef USB_BUS
-	void atbm_usb_bh_halt(struct atbm_common *hw_priv);
-	atbm_usb_bh_halt(hw_priv);
-#endif
-	return 1;
-}
-static ssize_t decode_common_store(const char *buf, size_t n)
-{
-	char *p;
-	int len;
-	struct common_store_code *store_code;
-	int code = 0;
-	p = memchr(buf, '\n', n); 
-	len = p ? p - buf : n;
-
-	for(store_code = &common_store_code_buff[code];code<COMMON_CODE__MAX;code++){
-		if(store_code->code_cmd&&strlen(store_code->label)
-		   &&!strncmp(buf, store_code->label, strlen(store_code->label))){
-		   printk(KERN_ERR "%s:Process\n",store_code->label);
-		   return store_code->code_cmd(atbm_hw_priv_dereference(),buf,len);
-		}
-	}
-
-	return code;
-}
-static ssize_t atbm_debugfs_common_store(struct kobject *kobj, struct kobj_attribute *attr,
-			   const char *buf, size_t n)
-{
-	return decode_common_store(buf,n);
-}
-static ssize_t atbm_debugfs_common_show(struct kobject *kobj,
-			     struct kobj_attribute *attr, char *buf)
-{
-	struct atbm_debug_param seq;
-	struct atbm_common *hw_priv = atbm_hw_priv_dereference();
-	int ret = 0;
-	if(hw_priv == NULL)
-		return 0;
-	seq.buff = buf;
-	seq.private = (void *)hw_priv;
-	seq.size = PAGE_SIZE;
-	seq.cout = 0;
-	ret = atbm_status_show_common((void *)&seq, NULL);
-
-	return seq.cout;
-}
-static struct kobject *atbm_debugfs_kobj = NULL;
-
-static struct kobj_attribute atbm_debugfs_common_attr = __ATTR(debugfs_comm, 0644, atbm_debugfs_common_show, atbm_debugfs_common_store);
-
-static struct attribute *atbm_debugfs_attribute_group[]= {
-	&atbm_debugfs_common_attr.attr,
-	NULL,
-};
-
-static struct attribute_group atbm_debugfs_attr_group = {
-	.attrs = atbm_debugfs_attribute_group,
-};
-
-static int atbm_debugfs_attribute_init(void)
-{
-	int error;
-	atbm_debugfs_kobj = kobject_create_and_add("atbm_debugfs",
-					    NULL);
-	if (!atbm_debugfs_kobj){
-		return -EINVAL;
-	}
-
-	error = sysfs_create_group(atbm_debugfs_kobj, &atbm_debugfs_attr_group);
-	if (error)
-		kobject_put(atbm_debugfs_kobj);
-	return error;
-}
-static void atbm_debugfs_attribute_exit(void)
-{
-	if(atbm_debugfs_kobj == NULL)
-		return;
-	sysfs_remove_group(atbm_debugfs_kobj, &atbm_debugfs_attr_group);
-	kobject_put(atbm_debugfs_kobj);
-}
-#endif
 int atbm_debug_init_common(struct atbm_common *hw_priv)
 {
 	int ret = -ENOMEM;
@@ -798,7 +710,7 @@ int atbm_debug_init_common(struct atbm_common *hw_priv)
 		return ret;
 #ifdef CONFIG_ATBM_APOLLO_DEBUGFS
 
-	printk("atbm_debug_init_common: create dir............ \n\n");
+	atbm_printk_init("atbm_debug_init_common: create dir............ \n\n");
 
 	d->debugfs_phy = debugfs_create_dir("apollo",
 			hw_priv->hw->wiphy->debugfsdir);
@@ -834,10 +746,6 @@ int atbm_debug_init_common(struct atbm_common *hw_priv)
 			d->debugfs_phy, hw_priv, &fops_short_dump))
 		goto err;
 #endif /* CONFIG_ATBM_APOLLO_WSM_DUMPS_SHORT */
-
-
-#else /* CONFIG_ATBM_APOLLO_DEBUGFS*/
-	atbm_debugfs_attribute_init();
 #endif
 	EELOG_INIT();
 	EELOG_Start();
@@ -861,10 +769,6 @@ void atbm_debug_release_common(struct atbm_common *hw_priv)
 		hw_priv->debug = NULL;
 		atbm_kfree(d);
 	}
-
-	#ifndef CONFIG_ATBM_APOLLO_DEBUGFS
-	atbm_debugfs_attribute_exit();
-	#endif
 }
 
 #endif

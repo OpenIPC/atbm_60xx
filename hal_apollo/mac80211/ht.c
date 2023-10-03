@@ -110,7 +110,6 @@ void ieee80211_ht_cap_to_sta_channel_type(struct sta_info *sta)
 	char vif_channel_type = 0;
 	char sta_channel_type = !!(sta->sta.ht_cap.cap&IEEE80211_HT_CAP_SUP_WIDTH_20_40);
 	if(sdata == NULL){
-		printk(KERN_ERR "%s:sdata==NULL\n",__func__);
 		return;
 	}
 	switch (vif_chw(&sdata->vif)) {
@@ -129,35 +128,39 @@ void ieee80211_ht_cap_to_sta_channel_type(struct sta_info *sta)
 		if(vif_channel_type){
 			set_sta_flag(sta,WLAN_STA_40M_CH);
 			clear_sta_flag(sta,WLAN_STA_40M_CH_SEND_20M);
-			printk(KERN_ERR "[%pM]:40M channel\n",sta->sta.addr);
+			atbm_printk_always("[%pM]:40M channel\n",sta->sta.addr);
 		}
 		else {
 			clear_sta_flag(sta,WLAN_STA_40M_CH);
-			printk(KERN_ERR "[%pM]:20M channel\n",sta->sta.addr);
+			atbm_printk_always("[%pM]:20M channel\n",sta->sta.addr);
 		}
 	}else {
 		clear_sta_flag(sta,WLAN_STA_40M_CH);
-		printk(KERN_ERR "[%pM]:20M channel\n",sta->sta.addr);
+		atbm_printk_always("[%pM]:20M channel\n",sta->sta.addr);
 	}
 }
 void ieee80211_sta_tear_down_BA_sessions(struct sta_info *sta, bool tx)
 {
 	int i;
 
-	cancel_work_sync(&sta->ampdu_mlme.work);
+	atbm_cancel_work_sync(&sta->ampdu_mlme.work);
 
 	for (i = 0; i <  STA_TID_NUM; i++) {
+#ifdef CONFIG_ATBM_SW_AGGTX
 		__ieee80211_stop_tx_ba_session(sta, i, WLAN_BACK_INITIATOR, tx);
+#endif
 		__ieee80211_stop_rx_ba_session(sta, i, WLAN_BACK_RECIPIENT,
 					       WLAN_REASON_QSTA_LEAVE_QBSS, tx);
 	}
 }
 
-void ieee80211_ba_session_work(struct work_struct *work)
+void ieee80211_ba_session_work(struct atbm_work_struct *work)
 {
 	struct sta_info *sta =
 		container_of(work, struct sta_info, ampdu_mlme.work);
+#ifdef CONFIG_ATBM_SW_AGGTX
 	struct tid_ampdu_tx *tid_tx;
+#endif
 	int tid;
 
 	/*
@@ -181,7 +184,7 @@ void ieee80211_ba_session_work(struct work_struct *work)
 			___ieee80211_stop_rx_ba_session(
 				sta, tid, WLAN_BACK_RECIPIENT,
 				WLAN_REASON_UNSPECIFIED, true);
-
+#ifdef CONFIG_ATBM_SW_AGGTX
 		tid_tx = sta->ampdu_mlme.tid_start_tx[tid];
 		if (tid_tx) {
 			/*
@@ -208,10 +211,11 @@ void ieee80211_ba_session_work(struct work_struct *work)
 			___ieee80211_stop_tx_ba_session(sta, tid,
 							WLAN_BACK_INITIATOR,
 							true);
+#endif
 	}
 	mutex_unlock(&sta->ampdu_mlme.mtx);
 }
-
+#ifdef CONFIG_ATBM_DRIVER_PROCESS_BA
 void ieee80211_send_delba(struct ieee80211_sub_if_data *sdata,
 			  const u8 *da, u16 tid,
 			  u16 initiator, u16 reason_code)
@@ -241,7 +245,7 @@ void ieee80211_send_delba(struct ieee80211_sub_if_data *sdata,
 
 	atbm_skb_put(skb, 1 + sizeof(mgmt->u.action.u.delba));
 
-	mgmt->u.action.category = WLAN_CATEGORY_BACK;
+	mgmt->u.action.category = ATBM_WLAN_CATEGORY_BACK;
 	mgmt->u.action.u.delba.action_code = WLAN_ACTION_DELBA;
 	params = (u16)(initiator << 11); 	/* bit 11 initiator */
 	params |= (u16)(tid << 12); 		/* bit 15:12 TID number */
@@ -251,7 +255,7 @@ void ieee80211_send_delba(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_tx_skb(sdata, skb);
 }
-
+#endif
 void ieee80211_process_delba(struct ieee80211_sub_if_data *sdata,
 			     struct sta_info *sta,
 			     struct atbm_ieee80211_mgmt *mgmt, size_t len)
@@ -265,7 +269,7 @@ void ieee80211_process_delba(struct ieee80211_sub_if_data *sdata,
 
 #ifdef CONFIG_MAC80211_ATBM_HT_DEBUG
 	if (net_ratelimit())
-		printk(KERN_DEBUG "delba from %pM (%s) tid %d reason code %d\n",
+		atbm_printk_always("delba from %pM (%s) tid %d reason code %d\n",
 			mgmt->sa, initiator ? "initiator" : "recipient", tid,
 			le16_to_cpu(mgmt->u.action.u.delba.reason_code));
 #endif /* CONFIG_MAC80211_ATBM_HT_DEBUG */
@@ -273,11 +277,13 @@ void ieee80211_process_delba(struct ieee80211_sub_if_data *sdata,
 	if (initiator == WLAN_BACK_INITIATOR)
 		__ieee80211_stop_rx_ba_session(sta, tid, WLAN_BACK_INITIATOR, 0,
 					       true);
+#ifdef CONFIG_ATBM_SW_AGGTX
 	else
 		__ieee80211_stop_tx_ba_session(sta, tid, WLAN_BACK_RECIPIENT,
 					       true);
+#endif
 }
-
+#ifdef CONFIG_ATBM_SMPS
 int ieee80211_send_smps_action(struct ieee80211_sub_if_data *sdata,
 			       enum ieee80211_smps_mode smps, const u8 *da,
 			       const u8 *bssid)
@@ -298,7 +304,7 @@ int ieee80211_send_smps_action(struct ieee80211_sub_if_data *sdata,
 	memcpy(action_frame->bssid, bssid, ETH_ALEN);
 	action_frame->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
 						  IEEE80211_STYPE_ACTION);
-	action_frame->u.action.category = WLAN_CATEGORY_HT;
+	action_frame->u.action.category = ATBM_WLAN_CATEGORY_HT;
 	action_frame->u.action.u.ht_smps.action = WLAN_HT_ACTION_SMPS;
 	switch (smps) {
 	case IEEE80211_SMPS_AUTOMATIC:
@@ -325,7 +331,7 @@ int ieee80211_send_smps_action(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
-void ieee80211_request_smps_work(struct work_struct *work)
+void ieee80211_request_smps_work(struct atbm_work_struct *work)
 {
 	struct ieee80211_sub_if_data *sdata =
 		container_of(work, struct ieee80211_sub_if_data,
@@ -335,7 +341,6 @@ void ieee80211_request_smps_work(struct work_struct *work)
 	__ieee80211_request_smps(sdata, sdata->u.mgd.driver_smps_mode);
 	mutex_unlock(&sdata->u.mgd.mtx);
 }
-
 void ieee80211_request_smps(struct ieee80211_vif *vif,
 			    enum ieee80211_smps_mode smps_mode)
 {
@@ -352,5 +357,6 @@ void ieee80211_request_smps(struct ieee80211_vif *vif,
 	ieee80211_queue_work(&sdata->local->hw,
 			     &sdata->u.mgd.request_smps_work);
 }
+#endif
 /* this might change ... don't want non-open drivers using it */
 //EXPORT_SYMBOL_GPL(ieee80211_request_smps);

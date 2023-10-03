@@ -145,8 +145,7 @@ static int ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 	}
 
 	if (ret != -ENOSPC && ret != -EOPNOTSUPP)
-		wiphy_err(key->local->hw.wiphy,
-			  "failed to set key (%d, %pM) to hardware (%d)\n",
+		atbm_printk_err("failed to set key (%d, %pM) to hardware (%d)\n",
 			  key->conf.keyidx, sta ? sta->addr : bcast_addr, ret);
 
  out_unsupported:
@@ -196,8 +195,7 @@ static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
 			  sta, &key->conf);
 
 	if (ret)
-		wiphy_err(key->local->hw.wiphy,
-			  "failed to remove key (%d, %pM) from hardware (%d)\n",
+		atbm_printk_warn("failed to remove key (%d, %pM) from hardware (%d)\n",
 			  key->conf.keyidx, sta ? sta->addr : bcast_addr, ret);
 
 #ifdef CONFIG_MAC80211_ATBM_ROAMING_CHANGES
@@ -212,7 +210,7 @@ static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
 #endif
 	key->flags &= ~KEY_FLAG_UPLOADED_TO_HARDWARE;
 }
-
+#ifdef CONFIG_ATBM_MAC80211_NO_USE
 void ieee80211_key_removed(struct ieee80211_key_conf *key_conf)
 {
 	struct ieee80211_key *key;
@@ -232,7 +230,7 @@ void ieee80211_key_removed(struct ieee80211_key_conf *key_conf)
 	synchronize_rcu();
 }
 //EXPORT_SYMBOL_GPL(ieee80211_key_removed);
-
+#endif
 static void __ieee80211_set_default_key(struct ieee80211_sub_if_data *sdata,
 					int idx, bool uni, bool multi)
 {
@@ -359,8 +357,10 @@ struct ieee80211_key *ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 					  size_t seq_len, const u8 *seq)
 {
 	struct ieee80211_key *key;
-	int i, j, err;
-
+	int i, j;
+#ifdef CONFIG_ATBM_USE_SW_ENC
+	int err;
+#endif
 	BUG_ON(idx < 0 || idx >= NUM_DEFAULT_KEYS + NUM_DEFAULT_MGMT_KEYS);
 
 	key = atbm_kzalloc(sizeof(struct ieee80211_key) + key_len, GFP_KERNEL);
@@ -405,6 +405,7 @@ struct ieee80211_key *ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 					key->u.ccmp.rx_pn[i][j] =
 						seq[CCMP_PN_LEN - j - 1];
 		}
+#ifdef CONFIG_ATBM_USE_SW_ENC
 		/*
 		 * Initialize AES key state here as an optimization so that
 		 * it does not need to be initialized for every packet.
@@ -415,6 +416,7 @@ struct ieee80211_key *ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 			atbm_kfree(key);
 			return ERR_PTR(err);
 		}
+#endif
 		break;
 	case WLAN_CIPHER_SUITE_AES_CMAC:
 		key->conf.iv_len = 0;
@@ -422,6 +424,7 @@ struct ieee80211_key *ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 		if (seq)
 			for (j = 0; j < 6; j++)
 				key->u.aes_cmac.rx_pn[j] = seq[6 - j - 1];
+#ifdef CONFIG_ATBM_USE_SW_ENC
 		/*
 		 * Initialize AES key state here as an optimization so that
 		 * it does not need to be initialized for every packet.
@@ -433,6 +436,7 @@ struct ieee80211_key *ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 			atbm_kfree(key);
 			return ERR_PTR(err);
 		}
+#endif
 		break;
 #ifdef CONFIG_WAPI_SUPPORT
 	case WLAN_CIPHER_SUITE_SMS4:
@@ -469,24 +473,27 @@ static void __ieee80211_key_destroy(struct ieee80211_key *key)
 	 * before removing the key from the device.
 	 * We use non blocking rcu to decrease roaming time.
 	 */
-	if (key->sdata->vif.type == NL80211_IFTYPE_STATION &&
-	    key->sdata->u.mgd.roaming) {
+	if(key->sdata){
+		if (key->sdata->vif.type == NL80211_IFTYPE_STATION &&
+		    key->sdata->u.mgd.roaming) {
 
-		if (key->local)
-			ieee80211_key_disable_hw_accel(key);
+			if (key->local)
+				ieee80211_key_disable_hw_accel(key);
+#ifdef CONFIG_ATBM_USE_SW_ENC
+			if (key->conf.cipher == WLAN_CIPHER_SUITE_CCMP)
+				ieee80211_aes_key_free(key->u.ccmp.tfm);
+			if (key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC)
+				ieee80211_aes_cmac_key_free(key->u.aes_cmac.tfm);
+#endif
+			if (key->local) {
+				ieee80211_debugfs_key_remove(key);
+				key->sdata->crypto_tx_tailroom_needed_cnt--;
+			}
 
-		if (key->conf.cipher == WLAN_CIPHER_SUITE_CCMP)
-			ieee80211_aes_key_free(key->u.ccmp.tfm);
-		if (key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC)
-			ieee80211_aes_cmac_key_free(key->u.aes_cmac.tfm);
-		if (key->local) {
-			ieee80211_debugfs_key_remove(key);
-			key->sdata->crypto_tx_tailroom_needed_cnt--;
-	}
+			call_rcu(&key->rcu, ieee80211_key_free_rcu);
 
-		call_rcu(&key->rcu, ieee80211_key_free_rcu);
-
-		return;
+			return;
+		}
 	}
 #endif
 
@@ -498,11 +505,12 @@ static void __ieee80211_key_destroy(struct ieee80211_key *key)
 
 	if (key->local)
 		ieee80211_key_disable_hw_accel(key);
-
+#ifdef CONFIG_ATBM_USE_SW_ENC
 	if (key->conf.cipher == WLAN_CIPHER_SUITE_CCMP)
 		ieee80211_aes_key_free(key->u.ccmp.tfm);
 	if (key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC)
 		ieee80211_aes_cmac_key_free(key->u.aes_cmac.tfm);
+#endif
 	if (key->local) {
 		ieee80211_debugfs_key_remove(key);
 		key->sdata->crypto_tx_tailroom_needed_cnt--;
@@ -620,7 +628,7 @@ void ieee80211_enable_keys(struct ieee80211_sub_if_data *sdata)
 
 	mutex_unlock(&sdata->local->key_mtx);
 }
-
+#if 0
 void ieee80211_iter_keys(struct ieee80211_hw *hw,
 			 struct ieee80211_vif *vif,
 			 void (*iter)(struct ieee80211_hw *hw,
@@ -653,7 +661,7 @@ void ieee80211_iter_keys(struct ieee80211_hw *hw,
 	mutex_unlock(&local->key_mtx);
 }
 //EXPORT_SYMBOL(ieee80211_iter_keys);
-
+#endif
 void ieee80211_disable_keys(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_key *key;
@@ -683,7 +691,7 @@ void ieee80211_free_keys(struct ieee80211_sub_if_data *sdata)
 
 	mutex_unlock(&sdata->local->key_mtx);
 }
-
+#ifdef CONFIG_ATBM_USE_SW_ENC
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0))
 void ieee80211_gtk_rekey_notify(struct ieee80211_vif *vif, const u8 *bssid,
 				const u8 *replay_ctr, gfp_t gfp)
@@ -770,3 +778,4 @@ void ieee80211_get_key_rx_seq(struct ieee80211_key_conf *keyconf,
 	}
 }
 //EXPORT_SYMBOL(ieee80211_get_key_rx_seq);
+#endif

@@ -21,12 +21,13 @@
 
 #include "ieee80211_i.h"
 
-#if (ATBM_ALLOC_MEM_DEBUG == 1)
+#if defined (ATBM_ALLOC_MEM_DEBUG)
+#pragma message("Mem Debug Enable")
 #define ATBM_MEM_SHOW_BUFF_MAX_SIZE		PAGE_SIZE
 #define ATBM_MEM_SHOW_PUT(_show,...)	\
 	do{										\
 		int ret = 0;						\
-		ret = snprintf((_show)->show_buff+(_show)->show_count,(_show)->show_size-(_show)->show_count,__VA_ARGS__);		\
+		ret = scnprintf((_show)->show_buff+(_show)->show_count,(_show)->show_size-(_show)->show_count,__VA_ARGS__);		\
 		if(ret>=0)	(_show)->show_count+=ret;				\
 	}while(0)
 #define ATBM_MEM_RESERV			(64-((sizeof(char *)+sizeof(struct list_head))%64))
@@ -69,7 +70,7 @@ static void *__ieee80211_atbm_kmalloc(size_t s, gfp_t gfp,const char *call_addr)
 	unsigned long flags;
 	
 	atbm_mem = kmalloc(s+sizeof(struct ieee80211_atbm_mem),gfp);
-	printk(KERN_ERR "alloc atbm_mem(%p)\n",atbm_mem);
+	atbm_printk_debug( "alloc atbm_mem(%p)\n",atbm_mem);
 	if(atbm_mem){
 		p = (void*)atbm_mem->mem;
 		atbm_mem->call_addr = call_addr;
@@ -184,7 +185,7 @@ static int ieee80211_atbm_mem_object_int(void)
 	int error;
 
 	atbm_mem_kobj = kobject_create_and_add("atbm_mem",
-					    NULL);
+					    atbm_module_parent);
 	if (!atbm_mem_kobj)
 		return -EINVAL;
 
@@ -204,13 +205,13 @@ void ieee80211_atbm_mem_exit(void)
 {
 	struct ieee80211_atbm_mem *atbm_mem = NULL;
 	unsigned long flags;
-	printk(KERN_ERR"ieee80211_atbm_mem_exit\n");
+	atbm_printk_exit("ieee80211_atbm_mem_exit\n");
 	spin_lock_irqsave(&ieee80211_atbm_mem_spin_lock, flags);
 	while (!list_empty(&ieee80211_atbm_mem_list)) {
 		atbm_mem = list_first_entry(
 			&ieee80211_atbm_mem_list, struct ieee80211_atbm_mem, head);
 
-		printk(KERN_ERR "%s:malloc addr(%s)\n",__func__,atbm_mem->call_addr);
+		atbm_printk_always("%s:malloc addr(%s)\n",__func__,atbm_mem->call_addr);
 		list_del(&atbm_mem->head);
 		kfree(atbm_mem);
 	}
@@ -220,7 +221,7 @@ void ieee80211_atbm_mem_exit(void)
 
 void ieee80211_atbm_mem_int(void)
 {
-	printk(KERN_ERR "%s:%d\n",__func__,(u32)sizeof(struct ieee80211_atbm_mem));
+	atbm_printk_init("%s:%d\n",__func__,(u32)sizeof(struct ieee80211_atbm_mem));
 	spin_lock_init(&ieee80211_atbm_mem_spin_lock);
 	INIT_LIST_HEAD(&ieee80211_atbm_mem_list);
 	ieee80211_atbm_mem_object_int();

@@ -55,9 +55,9 @@ int smartconfig_magic_channel_cnt(int cnt);
 int smartconfig_magic_channel_timeout(int ms);
 /*ms : 500ms ~ 10000ms*/
 int smartconfig_payload_timeout(int ms);
-void atbm_smart_scan_work(struct work_struct *work);
-void atbm_smart_setchan_work(struct work_struct *work);
-void atbm_smart_stop_work(struct work_struct *work);
+void atbm_smart_scan_work(struct atbm_work_struct *work);
+void atbm_smart_setchan_work(struct atbm_work_struct *work);
+void atbm_smart_stop_work(struct atbm_work_struct *work);
 void atbm_smartconfig_expire_timer(unsigned long arg);
 
 
