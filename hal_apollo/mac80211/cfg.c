@@ -3604,7 +3604,8 @@ static int ieee80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
 	return ieee80211_cancel_roc(local, cookie, true);
 }
 #endif
-#if 0
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 static void ieee80211_mgmt_frame_register(struct wiphy *wiphy,
 			#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
 			struct wireless_dev *wdev,

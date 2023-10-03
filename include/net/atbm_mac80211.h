@@ -27,6 +27,8 @@
 #include <uapi/linux/sched/types.h>
 #endif
 
+#define fallthrough __attribute__((fallthrough))
+
 #ifdef CONFIG_ATBM_SELF_WORKQUEUE
 struct atbm_work_struct;
 struct atbm_delayed_work;
