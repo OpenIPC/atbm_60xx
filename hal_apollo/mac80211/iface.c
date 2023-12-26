@@ -988,15 +988,14 @@ static u16 ieee80211_netdev_select_queue(struct net_device *dev,
                                         struct sk_buff *skb,
 										struct net_device *sb_dev)
 										
-#elif (LINUX_VERSION_CODE >=  KERNEL_VERSION(4,9,84))
+#elif (LINUX_VERSION_CODE >=  KERNEL_VERSION(4, 9, 0))
 
 static u16 ieee80211_netdev_select_queue(struct net_device *dev,
 										struct sk_buff *skb,
                                         void *accel_priv,
                                         select_queue_fallback_t fallback)
 
-
-#elif ( LINUX_VERSION_CODE >=  KERNEL_VERSION(4,4,0))
+#elif ( LINUX_VERSION_CODE >=  KERNEL_VERSION(4, 4, 0))
 
 static u16 ieee80211_netdev_select_queue(struct net_device *dev,
                                         struct sk_buff *skb,
@@ -1688,12 +1687,11 @@ static u16 ieee80211_monitor_select_queue(struct net_device *dev,
 										struct sk_buff *skb,	
 										struct net_device *sb_dev)
 
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 84))
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 static u16 ieee80211_monitor_select_queue(struct net_device *dev,
 										struct sk_buff *skb,
 										void *accel_priv,
 										select_queue_fallback_t fallback)
-
 
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static u16 ieee80211_monitor_select_queue(struct net_device *dev,
