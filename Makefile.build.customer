@@ -18,7 +18,6 @@ NOSTDINC_FLAGS := -I$(src)/include/ \
 
 
 #####################################################
-export
 ifeq ($(CONFIG_ATBM_MODULE_NAME),)
 CONFIG_ATBM_MODULE_NAME = atbm_wifi
 endif
@@ -53,19 +52,42 @@ endif
 ifeq ($(CONFIG_ATBM_FW_NAME),)
 CONFIG_ATBM_FW_NAME="fw.bin"
 endif
-export
-SDIO_HOST      ?= $(shell echo $(CONFIG_ATBM_SDIO_MMCx))
-IF1NAME        ?= $(shell echo $(CONFIG_ATBM_WIFIIF1_NAME))
-IF2NAME        ?= $(shell echo $(CONFIG_ATBM_WIFIIF2_NAME))
-FW             ?= $(shell echo $(CONFIG_ATBM_FW_NAME))
-MODULES_NAME   ?= $(shell echo $(CONFIG_ATBM_MODULE_NAME))
-USBVID		   ?= $(shell echo $(CONFIG_ATBM_USB_VID))
-USBPID		   ?= $(shell echo $(CONFIG_ATBM_USB_PID))
-SDIOVID			?=$(shell echo $(CONFIG_ATBM_SDIO_VID))
-SDIOPID			?=$(shell echo $(CONFIG_ATBM_SDIO_PID))
-MODDRVNAME	   ?= $(shell echo $(CONFIG_ATBM_MODULE_DRIVER_NAME))
-PLFDEVNAME	   ?= $(shell echo $(CONFIG_ATBM_PLATFORM_DEVICE_NAME))
-MODPMSTAYAWK   ?= $(shell echo $(CONFIG_ATBM_MODULE_PM_STAYAWK))
+ifeq ($(origin SDIO_HOST),undefined)
+SDIO_HOST := $(shell echo $(CONFIG_ATBM_SDIO_MMCx))
+endif
+ifeq ($(origin IF1NAME),undefined)
+IF1NAME := $(shell echo $(CONFIG_ATBM_WIFIIF1_NAME))
+endif
+ifeq ($(origin IF2NAME),undefined)
+IF2NAME := $(shell echo $(CONFIG_ATBM_WIFIIF2_NAME))
+endif
+ifeq ($(origin FW),undefined)
+FW := $(shell echo $(CONFIG_ATBM_FW_NAME))
+endif
+ifeq ($(origin MODULES_NAME),undefined)
+MODULES_NAME := $(shell echo $(CONFIG_ATBM_MODULE_NAME))
+endif
+ifeq ($(origin USBVID),undefined)
+USBVID := $(shell echo $(CONFIG_ATBM_USB_VID))
+endif
+ifeq ($(origin USBPID),undefined)
+USBPID := $(shell echo $(CONFIG_ATBM_USB_PID))
+endif
+ifeq ($(origin SDIOVID),undefined)
+SDIOVID := $(shell echo $(CONFIG_ATBM_SDIO_VID))
+endif
+ifeq ($(origin SDIOPID),undefined)
+SDIOPID := $(shell echo $(CONFIG_ATBM_SDIO_PID))
+endif
+ifeq ($(origin MODDRVNAME),undefined)
+MODDRVNAME := $(shell echo $(CONFIG_ATBM_MODULE_DRIVER_NAME))
+endif
+ifeq ($(origin PLFDEVNAME),undefined)
+PLFDEVNAME := $(shell echo $(CONFIG_ATBM_PLATFORM_DEVICE_NAME))
+endif
+ifeq ($(origin MODPMSTAYAWK),undefined)
+MODPMSTAYAWK := $(shell echo $(CONFIG_ATBM_MODULE_PM_STAYAWK))
+endif
 
 SAEAUTHEN      ?= $(CONFIG_ATBM_FUNC_SAE_AUTHEN)
 LOAD_FW_H      ?= $(CONFIG_ATBM_USE_FIRMWARE_H)
@@ -116,7 +138,6 @@ endif
 MULT_NAME=y
 ATBM_MAKEFILE_SUB=y
 #####################################################
-export 
 ifeq ($(CONFIG_ATBM_APOLLO),)
 CONFIG_ATBM_APOLLO=m
 endif
@@ -170,3 +191,18 @@ hal_clean:
 	rm -rf hal_apollo/mac80211/.*.cmd
 	rm -rf hal_apollo/mac80211/*.o
 	rm -rf driver_install/*.ko
+
+# By name, not a bare export: see the note in Makefile (GNU make 4.4).
+export ATBM_MAKEFILE_SUB BRIDGE CH5G CHECKSUM CONFIG_ARESB \
+	CONFIG_ATBM_APOLLO CONFIG_ATBM_FW_NAME CONFIG_ATBM_MODULE_DRIVER_NAME \
+	CONFIG_ATBM_MODULE_NAME CONFIG_ATBM_PLATFORM_DEVICE_NAME \
+	CONFIG_ATBM_SDIO_PID CONFIG_ATBM_SDIO_VID CONFIG_ATBM_USB_PID \
+	CONFIG_ATBM_USB_VID CONFIG_ATBM_WIFIIF1_NAME CONFIG_ATBM_WIFIIF2_NAME \
+	CONFIG_ATHENAB CONFIG_ATHENAB_24M CONFIG_HERA CONFIG_NOT_SUPPORT_40M_CHW \
+	CUSTORMSPECIAL DEVCTRL DRVLOADERFAST EARLYSUSPEND FW HIF IF1NAME IF2NAME \
+	LOAD_FW_H MEM_DEBUG MODDRVNAME MODPMSTAYAWK MODULEFS MODULES_NAME \
+	MONHDRPRISM MONITOR MULT_NAME NEED_SCOND_INTERFACE NOSTDINC_FLAGS \
+	NOTXCONFIRM ONLY_HT20 P2PENABLE PLFDEVNAME PMRELODDFW PRI_IE PWD SAEAUTHEN \
+	SDIOPID SDIOVID SDIO_BUS SDIO_HOST SKB_DEBUG SMARTCONFIG SPI_BUS SWENC \
+	SWRATECTRL USBAGGTX USBCMDENHANCE USBDATAENHANCE USBDMABUFF USBPID USBVID \
+	USB_BUS WIFI_INSTALL_DIR
