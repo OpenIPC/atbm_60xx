@@ -1,0 +1,4 @@
+delta_gain1:15
+delta_gain2:2
+delta_gain3:-15
+dcxo:59
