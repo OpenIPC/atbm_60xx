@@ -2234,6 +2234,11 @@ static void atbm_usb_receive_data_complete(struct urb *urb)
 	wsm = (struct wsm_hdr *)skb->data;
 
 	do{
+		/* wsm->len and the trace check below read the header */
+		if(RecvLength < sizeof(struct wsm_hdr)){
+			atbm_printk_err("atbm_usb_rx_complete short frame(%d)\n",RecvLength);
+			goto drop_current;
+		}
 		if((RecvLength % self->drvobj->ep_in_size) == 0){
 			atbm_printk_err("atbm_usb_rx_complete len not enough[%x][%d][%d]\n",wsm->id,le16_to_cpu(wsm->len),RecvLength);
 			goto usb_wk;
@@ -2850,7 +2855,8 @@ static struct dvobj_priv *usb_dvobj_init(struct usb_interface *usb_intf)
 				pdvobjpriv->ep_out_size=le16_to_cpu(pendp_desc->wMaxPacketSize);
 				pdvobjpriv->ep_out=usb_endpoint_num(pendp_desc);
 			}
-			pdvobjpriv->ep_num[i] = usb_endpoint_num(pendp_desc);
+			if (i < ARRAY_SIZE(pdvobjpriv->ep_num))
+				pdvobjpriv->ep_num[i] = usb_endpoint_num(pendp_desc);
 		}
 	}
 	usb_get_dev(pusbd);

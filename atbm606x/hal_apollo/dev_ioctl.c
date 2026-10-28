@@ -389,20 +389,22 @@ static int atbm_dev_set_private_mgmt_frame(struct net_device *dev, struct altm_w
 					private_ie.OUI[1] = (ATBM_6441_PRIVATE_OUI >> 16) & 0xFF;
 					private_ie.OUI[2] = (ATBM_6441_PRIVATE_OUI >> 8) & 0xFF;
 					private_ie.OUI[3] = ATBM_6441_PRIVATE_OUI & 0xFF;
-					ptr = strchr(&msg->externData[1],',');
-					
-					//sscanf(&msg->externData[1],"%s,%s",private_ie.ssid,private_ie.password);
+					/* "<ssid>,<password>", neither longer than its field */
+					ptr = strnchr(&msg->externData[1], sizeof(msg->externData) - 1, ',');
+					if (!ptr || ptr - &msg->externData[1] > sizeof(private_ie.ssid))
+						return -EINVAL;
 					private_ie.ssid_len = ptr - &msg->externData[1];
 					memcpy(private_ie.ssid,&msg->externData[1],private_ie.ssid_len);
-					//private_ie.ssid_len = strlen(private_ie.ssid);
-					//
-					private_ie.password_len = strlen(ptr+1);
+					private_ie.password_len = strnlen(ptr + 1,
+						sizeof(msg->externData) - (ptr + 1 - msg->externData));
+					if (private_ie.password_len > sizeof(private_ie.password))
+						return -EINVAL;
 					memcpy(private_ie.password,ptr+1,private_ie.password_len);
 					
 					private_ie.ie_len = sizeof(struct atbm_vendor_cfg_ie) - 2;
 
-					atbm_printk_err("sdata:%p,ssid=%s , ssid_len = %d,psk=%s,psk_len=%d \n",sdata,
-							private_ie.ssid,private_ie.ssid_len,private_ie.password,private_ie.password_len);
+					atbm_printk_err("sdata:%p,ssid=%.*s , ssid_len = %d,psk_len=%d \n",sdata,
+							private_ie.ssid_len,private_ie.ssid,private_ie.ssid_len,private_ie.password_len);
 					
 					
 
@@ -1181,6 +1183,10 @@ static int atbm_dev_send_special_probe_req(struct net_device *dev, struct altm_w
 		goto exit;
 	}
 	len = msg->value;
+	if(len <= 0 || len > 255){
+		ret = -EINVAL;
+		goto exit;
+	}
 	special = atbm_kzalloc(len, GFP_KERNEL);
 	if(special == NULL){
 			ret = -EINVAL;
@@ -1188,17 +1194,14 @@ static int atbm_dev_send_special_probe_req(struct net_device *dev, struct altm_w
 	}
 	memcpy(special,msg->externData, len);
 
-	if(len > 255){
-		ret = -EINVAL;
-		goto exit;
-	}
-
     if(local->listen_started || sdata->vif.bss_conf.assoc){
         for (i = 0; i < 6; i++) {
             if (msg->ssid[0] == '\0'){
                 ieee80211_send_probe_req(sdata,NULL,NULL,0,special,len,-1,true,false);
             }else{
-                ieee80211_send_probe_req(sdata,NULL,msg->ssid,strlen(msg->ssid),special,len,-1,true,false);
+                ieee80211_send_probe_req(sdata,NULL,msg->ssid,
+                    min_t(size_t, strnlen(msg->ssid, sizeof(msg->ssid)), IEEE80211_MAX_SSID_LEN),
+                    special,len,-1,true,false);
             }
         }
     }
