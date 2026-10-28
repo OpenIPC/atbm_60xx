@@ -1,0 +1,26 @@
+#############################################################################
+#               Makefile For Kernel
+############################################################################
+ifneq ($(ATBM_BUILD_IN_KERNEL),y)
+-include $(WIFI_PROJ_DIR)/.config
+endif
+
+
+
+
+
+ifeq ($(CONFIG_ATBM_APOLLO_WIFI6),)
+CONFIG_ATBM_APOLLO_WIFI6=m
+endif
+
+
+
+
+
+ifneq ($(CONFIG_CPTCFG_CFG80211),) 
+obj-$(CONFIG_CPTCFG_CFG80211) += wireless/
+endif
+
+obj-$(CONFIG_ATBM_APOLLO_WIFI6) += hal_apollo/
+#obj-m += gmac/
+

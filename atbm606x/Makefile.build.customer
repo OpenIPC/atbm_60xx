@@ -1,0 +1,109 @@
+############################################################################
+#			ATBM WiFi Product Select
+#CONFIG_ATBM601x: 1T1R 80211b/g/n, HT20
+#if yout want to change .conf ,please do make menuconfig in current path
+############################################################################
+-include .config
+############################################################################
+#
+#	The Follow Code Of The Makefile Should Not Be Changed 
+#
+############################################################################
+
+
+
+PWD:=$(shell pwd)
+WIFI_INSTALL_DIR := $(PWD)/driver_install/
+ifneq ($(ATBM_BUILD_IN_KERNEL),y)
+export WIFI_PROJ_DIR=$(PWD)
+endif
+
+
+
+
+
+##################################################
+MODULES_NAME   ?= $(shell echo $(CONFIG_ATBM_MODULE_NAME_WIFI6))
+
+
+
+################### WIRELESS #########################
+
+
+
+all: get_ver modules install
+get_ver:
+	@echo "**************************************"
+	@echo "driver version"
+	@cat hal_apollo/svn_version.h | awk '{print $3}'
+	@echo "**************************************"
+modules:clean
+	@echo "arch=$(ARCH)"						
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) ATBM_SYSTEM=$(SYS) -C $(KDIR) M=$(shell pwd)  modules -j8
+#	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	
+strip:
+	$(CROSS_COMPILE)strip $(WIFI_INSTALL_DIR)/$(MODULES_NAME).ko --strip-unneeded
+ifneq ($(CONFIG_CPTCFG_CFG80211),) 
+	$(CROSS_COMPILE)strip $(WIFI_INSTALL_DIR)/cfg80211.ko --strip-unneeded
+endif
+ifneq ($(BLEMODULE),)
+	#$(CROSS_COMPILE)strip $(WIFI_INSTALL_DIR)/ble*.ko --strip-unneeded
+endif
+#	$(CROSS_COMPILE)strip $(WIFI_INSTALL_DIR)/sunxi_gmac.ko --strip-unneeded
+
+install:modules
+	mkdir -p $(WIFI_INSTALL_DIR)
+	chmod 777 $(WIFI_INSTALL_DIR)
+	cp hal_apollo/*.ko         $(WIFI_INSTALL_DIR)
+ifneq ($(CONFIG_CPTCFG_CFG80211),) 
+	cp wireless/*.ko         $(WIFI_INSTALL_DIR)
+endif
+ifneq ($(BLEMODULE),)
+	#cp ble_host/*.ko         $(WIFI_INSTALL_DIR)
+endif
+#	cp gmac/*.ko		 $(WIFI_INSTALL_DIR)
+
+
+ble_stack:
+ifneq ($(CONFIG_ATBM_BLE_WIFI_PLATFORM_WIFI6),)
+	@echo "start ble host"
+	mkdir -p $(WIFI_INSTALL_DIR)
+	$(MAKE) ble_stack -f ble_host/Makefile  ARCH=$(ARCH)  CROSS_COMPILE=$(CROSS_COMPILE) KDIR=$(KERDIR) SYS=$(sys) PLAT=$(platform) -j8
+	$(MAKE) tools_install -f ble_host/tools/Makefile  ARCH=$(ARCH)  CROSS_COMPILE=$(CROSS_COMPILE) KDIR=$(KERDIR) SYS=$(sys) PLAT=$(platform) -j8
+	#cp -f ble_host/tools/ble_smt $(WIFI_INSTALL_DIR)
+#	mkdir -p $(WIFI_INSTALL_DIR)
+	cp -f ble_host/tools/atbm_cli $(WIFI_INSTALL_DIR)
+	cp -f ble_host/tools/atbm_tool $(WIFI_INSTALL_DIR)
+endif
+ble_stack_clean:
+	$(MAKE) ble_stack_clean -f ble_host/Makefile  ARCH=$(ARCH)  CROSS_COMPILE=$(CROSS_COMPILE) KDIR=$(KERDIR) SYS=$(sys) PLAT=$(platform) -j8
+
+
+uninstall:
+#	rm -f/wifihome/tftpboot/wuping/hmac/*.ko
+
+clean:hal_clean
+	rm -rf hal_apollo/*.o
+	rm -rf hal_apollo/*.ko  
+	rm -rf modules.* Module.* 
+
+
+hal_clean:
+	rm -rf hal_apollo/*.ko
+	rm -rf hal_apollo/*.o
+	rm -rf hal_apollo/*.mod.c
+	rm -rf hal_apollo/*.cmd
+	rm -rf hal_apollo/.*.cmd
+	rm -rf hal_apollo/mac80211/*.cmd
+	rm -rf hal_apollo/mac80211/.*.cmd
+	rm -rf hal_apollo/mac80211/*.o
+	rm -rf driver_install/*.ko
+	find ./ -name ".*.cmd" -exec rm -f {} \;
+	find ./ -name "*.o" -exec rm -f {} \;
+	find ./ -name "*.ko" -exec rm -f {} \;
+	find ./ -name "*.cmd" -exec rm -f {} \;
+	find ./ -name "*.mod" -exec rm -f {} \;
+	find ./ -name "*.order" -exec rm -f {} \;
+	
+	

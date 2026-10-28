@@ -1,0 +1,14 @@
+delta_gain1:31 
+delta_gain2:0
+delta_gain3:1
+delta_gain1_5g:31
+delta_gain2_5g:31
+delta_gain3_5g:31
+delta_gain4_5g:31
+delta_gain5_5g:-31
+delta_gain6_5g:-31
+delta_gain7_5g:-31
+delta_gain8_5g:-31
+delta_gain9_5g:-31
+delta_gain10_5g:-1
+dcxo:75
