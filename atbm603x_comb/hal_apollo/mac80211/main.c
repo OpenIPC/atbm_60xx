@@ -1979,7 +1979,9 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	if (local->hw.wiphy->interface_modes & BIT(NL80211_IFTYPE_STATION)) {
 		result = ieee80211_if_add(local, WIFI_IF1NAME, NULL,
 					  NL80211_IFTYPE_STATION, NULL);
+#ifdef CONFIG_AMLOGIC_KERNEL_VERSION
 	printk("CONFIG_AMLOGIC_KERNEL_VERSION = %d\n", CONFIG_AMLOGIC_KERNEL_VERSION);
+#endif
 		if (result)
 			atbm_printk_warn("Failed to add default virtual iface\n");
 #if (ATBM_WIFI_PLATFORM != 12) && (NEED_P2P0_INTERFACE == 1)//CDLINUX no need p2p0
