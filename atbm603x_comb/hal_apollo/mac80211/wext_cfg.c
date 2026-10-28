@@ -2729,7 +2729,7 @@ static int atbm_ioctl_set_txpw(struct net_device *dev, struct iw_request_info *i
 //	len = wdata->data.length-1;
 
 	memset(cmd, 0, sizeof(cmd));
-	sprintf(cmd, "set_txpower %s ", ptr);
+	snprintf(cmd, sizeof(cmd), "set_txpower %s ", ptr);
 	atbm_printk_wext("atbm: %s\n", cmd);
 	ret = wsm_write_mib(hw_priv, WSM_MIB_ID_FW_CMD, cmd, strlen(cmd), priv->if_id);
 	if(ret < 0)

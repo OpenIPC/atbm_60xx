@@ -2015,9 +2015,8 @@ static int wsm_event_indication(struct atbm_common *hw_priv,
 	priv = ABwifi_hwpriv_to_vifpriv(hw_priv, interface_link_id);
 	
 	if (unlikely(!priv)) {
-		wsm_printk( "[WSM] Event: %d(%d) for removed "
-			   "interface, ignoring\n", event->evt.eventId,
-			   event->evt.eventData);
+		wsm_printk( "[WSM] Event for removed interface %d, ignoring\n",
+			   interface_link_id);
 		return 0;
 	}
 	if (unlikely(priv->mode == NL80211_IFTYPE_UNSPECIFIED)) {
@@ -2289,13 +2288,13 @@ int wsm_cmd_send(struct atbm_common *hw_priv,
 			wsm_cmd_runtime = jiffies - wsm_cmd_starttime;
 			if(!ret  &&
 					wsm_cmd_runtime < wsm_cmd_max_tmo && 
-					(atomic_read(&hw_priv->bh_term)!=0)){
+					(atomic_read(&hw_priv->bh_term)==0)){
 				//wakeup again
 				wsm_cmd_hif_ximt(hw_priv);
 			}
 		} while (!ret  &&
 					wsm_cmd_runtime < wsm_cmd_max_tmo && 
-					(atomic_read(&hw_priv->bh_term)!=0));
+					(atomic_read(&hw_priv->bh_term)==0));
 	}
 	
 	if (unlikely(ret == 0)) {

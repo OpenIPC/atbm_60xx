@@ -1997,7 +1997,7 @@ __free_skb:
 		#endif
 		atbm_dev_kfree_skb(pUrb[i].test_skb);
 	}
-	i = max_num;
+	i = max_num - 1;
 __free_urb:
 	for( ;i>=0;--i){
 		usb_free_urb(pUrb[i].test_urb);
@@ -2637,6 +2637,8 @@ static void atbm_usb_receive_data_complete(struct urb *urb)
 														urb->actual_length,wsm->len,wsm->id,skb->len);
 
 			//frame_hexdump(__FUNCTION__,skb->data,urb->actual_length);
+			if (wsm->len < sizeof(*wsm) || wsm->len > RX_BUFFER_SIZE)
+				goto resubmit;
 			RecvLength = wsm->len;
 			urb->actual_length = wsm->len;
 		}
@@ -3607,7 +3609,7 @@ static int __atbm_usb_probe(struct usb_interface *intf,
 	/*3---alloc tx_urb*/
 	status = atbm_usb_urb_malloc(self,dvobj->tx_urb,TX_URB_NUM,TX_BUFFER_SIZE, 0,1);
 
-	if (!dvobj->tx_urb){
+	if (status != 0){
 		atbm_dbg(ATBM_APOLLO_DBG_ERROR, "Can't allocate tx_urb.");
 		wifi_usb_probe_doing= 0;
 		return -ENOMEM;

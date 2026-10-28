@@ -697,7 +697,7 @@ static void ieee80211_config_ap_ssid(struct ieee80211_sub_if_data *sdata,
 					  skb->len - offset);
 
 		if (ssidie) {
-			bss_conf->ssid_len = ssidie[1];
+			bss_conf->ssid_len = min_t(u8, ssidie[1], IEEE80211_MAX_SSID_LEN);
 			memcpy(bss_conf->ssid, &ssidie[2], bss_conf->ssid_len);
 			if (IEEE80211_MAX_SSID_LEN>bss_conf->ssid_len) {
 				bss_conf->ssid[bss_conf->ssid_len]=0;

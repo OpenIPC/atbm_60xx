@@ -175,7 +175,12 @@ int atbm_rx_bh_cb(struct atbm_common *hw_priv,struct sk_buff *skb)
 	wsm_id	= __le32_to_cpu(wsm->id) & 0xFFF;
 	wsm_seq = (__le32_to_cpu(wsm->id) >> 13) & 7;
 
-//	BUG_ON(wsm_len > 4096);
+	/* the length is the device's: a frame that cannot fit is dropped */
+	if (unlikely(wsm_len < sizeof(*wsm) ||
+		     wsm_len > skb_end_pointer(skb) - skb->data)) {
+		atbm_printk_err("rx frame length %u dropped\n", wsm_len);
+		goto __free;
+	}
 	atbm_skb_trim(skb,0);
 	atbm_skb_put(skb,wsm_len);
 
@@ -239,7 +244,12 @@ int atbm_rx_single_channel_bh_cb(struct atbm_common *hw_priv,struct sk_buff *skb
 
 	wsm_id	= __le16_to_cpu(wsm->id) & 0xFFF;
 
-	//BUG_ON(wsm_len > 4096);
+	/* the length is the device's: a frame that cannot fit is dropped */
+	if (unlikely(wsm_len < sizeof(*wsm) ||
+		     wsm_len > skb_end_pointer(skb) - skb->data)) {
+		atbm_printk_err("rx frame length %u dropped\n", wsm_len);
+		goto __free;
+	}
 	atbm_skb_trim(skb,0);
 	atbm_skb_put(skb,wsm_len);
 
