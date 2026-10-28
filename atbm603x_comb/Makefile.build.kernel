@@ -1,0 +1,13 @@
+#############################################################################
+#               Makefile For Kernel
+############################################################################
+
+
+ifeq ($(CONFIG_ATBM_APOLLO),)
+CONFIG_ATBM_APOLLO=m
+endif
+
+#$(warning "============>$(CONFIG_ATBM_APOLLO)")
+obj-$(CONFIG_ATBM_APOLLO) += hal_apollo/
+
+
