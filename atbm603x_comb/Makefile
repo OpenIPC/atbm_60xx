@@ -11,7 +11,6 @@ CUSTOMER_SUPPORT_USED=y
 #PLATFORM_MTK_9255 22
 ###############################################################################
 
-export
 platform ?= PLATFORM_DEFAULT
 ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=22
 #Android
@@ -32,8 +31,18 @@ ifeq ($(platform),)
     platform ?= PLATFORM_DEFAULT
 endif
 
+# Exported by name, never with a bare `export`: kbuild reads this file as the
+# module's Makefile, so a bare one exports every kbuild variable too, and GNU
+# make 4.4 expands exported variables for each $(shell). hal_apollo/Makefile's
+# $(shell)s then fire Makefile.lib's multi_depend $(eval) mid-parse, and 4.9
+# kernels stop with "prerequisites cannot be defined in recipes". The list
+# follows the ?= lines: an export ahead of `NAME ?= value` defines NAME empty.
+export CUSTOMER_SUPPORT_USED platform ATBM_WIFI__EXT_CCFLAGS sys ARCH MAKEFILE_SUB
+
 ifeq ($(KERNELRELEASE),)
-    export DRIVER_PATH ?= $(shell pwd)
+    ifeq ($(origin DRIVER_PATH),undefined)
+    DRIVER_PATH := $(shell pwd)
+    endif
 
 MODULE_NAME = atbm603x_comb_wifi_usb
 
@@ -41,7 +50,6 @@ MODULE_NAME = atbm603x_comb_wifi_usb
     ifeq ($(platform),PLATFORM_DEFAULT)
         KERDIR ?=
         CROSS_COMPILE ?=
-        export
         ARCH ?= 
         ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=24
     endif
@@ -56,7 +64,6 @@ MODULE_NAME = atbm603x_comb_wifi_usb
             KERDIR:=/usr/lchome/zhengzhiqiang/mtk9255/git_9255/kernel/fusion/4.9
             CROSS_COMPILE:=/usr/lchome/zhengzhiqiang/mtk9255/git_9255/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-
         endif
-        export
         arch = x86_64
 ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=22
 endif
@@ -82,7 +89,9 @@ export WIFI_PROJ_DIR=$(PWD)
 ifeq ($(CONFIG_ATBM_MODULE_DRIVER_NAME),)
 CONFIG_ATBM_MODULE_DRIVER_NAME = "atbm_wlan"
 endif
-MODULES_NAME   ?= $(shell echo $(CONFIG_ATBM_MODULE_NAME))
+ifeq ($(origin MODULES_NAME),undefined)
+MODULES_NAME := $(shell echo $(CONFIG_ATBM_MODULE_NAME))
+endif
 
 ################## BLE ###############################
 ifeq ($(CONFIG_ATBM_BLE_HOST_DRIVER),y)
@@ -90,7 +99,10 @@ export CONFIG_ATBM_BLE_HOST_DRIVER=m
 endif
 
 KDIR=$(KERNEL_SRC)
-M=$(shell pwd)
+M := $(shell pwd)
+
+export DRIVER_PATH MODULE_NAME KERDIR CROSS_COMPILE arch PWD WIFI_INSTALL_DIR \
+	CONFIG_ATBM_MODULE_DRIVER_NAME MODULES_NAME KDIR M
 
 all:modules
 
@@ -151,14 +163,11 @@ debug:
 
 else
     ifeq ($(platform),PLATFORM_DEFAULT)
-        export 
         ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=0
     endif
     ifeq ($(platform),PLATFORM_MTK_9255)
-        export 
         ATBM_WIFI__EXT_CCFLAGS = -DATBM_WIFI_PLATFORM=22
     endif
-    export 
 include $(src)/Makefile.build.kernel
 endif
 
