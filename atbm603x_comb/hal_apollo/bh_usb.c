@@ -308,12 +308,27 @@ static u8 atbm_rx_need_alloc_skb(int wsm_id)
 	return (id==WSM_RECEIVE_INDICATION_ID)||(id == WSM_SMARTCONFIG_INDICATION_ID);
 }
 //#define ALLOC_SKB_NULL_TEST
+/*
+ * RX copies come from kmalloc, not from the netdev page-frag cache.
+ *
+ * dev_alloc_skb() serves anything below SKB_WITH_OVERHEAD(PAGE_SIZE) out of
+ * netdev_alloc_cache, refilled with order-3 (32 KiB) compound pages, so every
+ * received frame is carved out of one, and the whole 32 KiB stays pinned until
+ * the last frame carved from it is freed. The socket charges a queued frame
+ * only its truesize, a few hundred bytes: segments a peer sends that an
+ * application has not read yet can then pin a block each while rcvbuf and
+ * tcp_mem see almost nothing, and a camera with ~27 MiB runs out of memory
+ * (OpenIPC/firmware#2455). From kmalloc a queued frame costs what it is
+ * charged, it shows in Slab, and the socket limits hold. NET_SKB_PAD is the
+ * headroom __netdev_alloc_skb() would have reserved.
+ */
 static struct sk_buff *atbm_get_skb(unsigned int length)
 {
+	struct sk_buff *skb;
 	#ifdef USB_USE_TASTLET_TXRX
-	#define __atbm_get_skb(_length) atbm_dev_alloc_skb(_length)
+	gfp_t gfp = GFP_ATOMIC;
 	#else
-	#define __atbm_get_skb(_length) __atbm_dev_alloc_skb(_length,GFP_KERNEL);
+	gfp_t gfp = GFP_KERNEL;
 	#endif
 	#ifdef ALLOC_SKB_NULL_TEST
 	static u32 skb_alloc_cnt = 0;
@@ -322,7 +337,10 @@ static struct sk_buff *atbm_get_skb(unsigned int length)
 	if((skb_alloc_cnt%4096) == 0)
 		return NULL;
 	#endif
-	return __atbm_get_skb(length);
+	skb = atbm_alloc_skb(length + NET_SKB_PAD, gfp);
+	if (skb)
+		atbm_skb_reserve(skb, NET_SKB_PAD);
+	return skb;
 }
 static bool atbm_rx_serial(struct atbm_common *hw_priv,u8 wsm_seq,int wsm_id)
 {
