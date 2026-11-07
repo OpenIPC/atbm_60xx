@@ -2218,11 +2218,15 @@ struct sk_buff *wsm_rx_alloc_8023_frame(struct atbm_common *hw_priv,struct wsm_h
 	wsmbuf.data = (u8 *)&wsm[1];
 	wsmbuf.end = &wsmbuf.begin[__le32_to_cpu(wsm->len)];
 	
-	skb = atbm_dev_alloc_skb(wsm->len + 64+64);
+	/* From kmalloc, as atbm_alloc_bh_skb() (util.c): a frame the stack
+	 * leaves queued must not pin a 32 KiB page-frag block. GFP_ATOMIC is
+	 * what dev_alloc_skb() used. */
+	skb = atbm_alloc_skb(wsm->len + 64+64 + NET_SKB_PAD, GFP_ATOMIC);
 
 	if(unlikely(skb == NULL)){
 		goto underflow;
 	}
+	atbm_skb_reserve(skb, NET_SKB_PAD);
 	
 	if(unlikely(wsm_fill_wsm_rx_info(&wsmbuf,&rx))){
 		goto underflow;
