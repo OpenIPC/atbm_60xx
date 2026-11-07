@@ -1,0 +1,206 @@
+diff --git a/hal_apollo/ap.c b/hal_apollo/ap.c
+index 8f5da3d..dc397d1 100644
+--- a/hal_apollo/ap.c
++++ b/hal_apollo/ap.c
+@@ -1771,13 +1771,13 @@ static int atbm_upload_beacon(struct atbm_vif *priv)
+ 		ssidie2 = atbm_ieee80211_find_ie(ATBM_WLAN_EID_SSID, skb->data + offset,
+ 						  skb->len - offset);
+ 
+-		hecapie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
++		hecapie =(const u8*) ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
+ 		if(NULL == hecapie)
+ 		{
+ 			atbm_printk_err("hecapie is null\n");
+ 		}
+ 
+-		heopsie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
++		heopsie = (const u8*)ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
+ 		if(NULL == heopsie)
+ 		{
+ 			atbm_printk_err("heopsie is null\n");
+@@ -1790,7 +1790,7 @@ static int atbm_upload_beacon(struct atbm_vif *priv)
+ 			{
+ 				memmove(hecapie,heopsie,(ies + ies_len -(hecapie+24)));
+ 		
+-				hecapie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
++				hecapie =(const u8*) ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
+ 				if(hecapie == NULL)
+ 				{
+ 					atbm_printk_err("no hecap\n");
+@@ -1807,7 +1807,7 @@ static int atbm_upload_beacon(struct atbm_vif *priv)
+ 					atbm_printk_ap("ssid_ie:%p\n",ssid_ie);
+ 				}
+ 
+-				heopsie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
++				heopsie = (const u8*)ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
+ 				if((NULL == heopsie))
+ 				{
+ 					atbm_printk_err("no heopsie\n");
+@@ -1835,7 +1835,7 @@ static int atbm_upload_beacon(struct atbm_vif *priv)
+ 			}
+ 		}
+ 
+-		heopsie2 = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
++		heopsie2 = (const u8 *)ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
+ 		if(NULL != heopsie2)
+ 		{
+ 			atbm_printk_err("still heopsie2:%p\n",heopsie2);
+@@ -2027,13 +2027,13 @@ static int atbm_upload_proberesp(struct atbm_vif *priv)
+ 						  skb->len - offset);
+ 
+ 
+-		hecapie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
++		hecapie = (const u8*)ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
+ 		if(NULL == hecapie)
+ 		{
+ 			atbm_printk_ap("hecapie is null\n");
+ 		}
+ 
+-		heopsie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
++		heopsie = (const u8*)ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
+ 		if(NULL == heopsie)
+ 		{
+ 			atbm_printk_ap("heopsie is null\n");
+@@ -2046,7 +2046,7 @@ static int atbm_upload_proberesp(struct atbm_vif *priv)
+ 			{
+ 				memmove(hecapie,heopsie,(ies + ies_len -(hecapie+24)));//Need take care "HeApComp=0" case
+ 			
+-				hecapie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
++				hecapie =(const u8*) ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_CAPABILITY, skb->data + offset, skb->len - offset);
+ 				if(hecapie == NULL)
+ 				{
+ 					atbm_printk_ap("prbrsp-no hecap\n");
+@@ -2057,7 +2057,7 @@ static int atbm_upload_proberesp(struct atbm_vif *priv)
+ 				ssid_ie = (u8 *)atbm_ieee80211_find_ie(ATBM_WLAN_EID_SSID, ies, ies_len);
+ 
+ 
+-				heopsie = ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
++				heopsie = (const u8*)ieee80211_find_ext_elem(ATBM_WLAN_EID_EXT_HE_OPERATION, skb->data + offset, skb->len - offset);
+ 
+ 				ies_len -= 24;
+ 				frame.skb->len -= 24;
+diff --git a/hal_apollo/dev_ioctl.c b/hal_apollo/dev_ioctl.c
+index d6f4402..d5b5456 100644
+--- a/hal_apollo/dev_ioctl.c
++++ b/hal_apollo/dev_ioctl.c
+@@ -328,7 +328,7 @@ int atbm_dev_set_scan_channel_limit(struct net_device *dev, struct altm_wext_msg
+ 
+  	struct atbm_scan_chan_limit ch_ilmit;
+ 
+-	int *ptr = NULL;
++	char *ptr = NULL;
+ 
+ 	
+ 	ch_ilmit.channel_2_4G_start = msg->externData[0];
+diff --git a/hal_apollo/mac80211/ieee80211_i.h b/hal_apollo/mac80211/ieee80211_i.h
+index fc0e5e8..f5bacdb 100644
+--- a/hal_apollo/mac80211/ieee80211_i.h
++++ b/hal_apollo/mac80211/ieee80211_i.h
+@@ -2061,12 +2061,13 @@ struct ieee80211_local {
+ 	struct arc4_ctx wep_tx_ctx;
+ 	struct arc4_ctx wep_rx_ctx;
+ #else
+-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 4, 0))
+-		struct crypto_cipher *wep_tx_tfm;
+-		struct crypto_cipher *wep_rx_tfm;
+-#else
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+ 		struct crypto_skcipher *wep_tx_tfm;
+ 		struct crypto_skcipher *wep_rx_tfm;
++#else	
++		struct crypto_cipher *wep_tx_tfm;
++		struct crypto_cipher *wep_rx_tfm;
++
+ #endif
+ 
+ #endif
+diff --git a/hal_apollo/mac80211/wep.c b/hal_apollo/mac80211/wep.c
+index 0d97e95..ce31147 100644
+--- a/hal_apollo/mac80211/wep.c
++++ b/hal_apollo/mac80211/wep.c
+@@ -23,7 +23,7 @@
+ #include <net/atbm_mac80211.h>
+ #include "ieee80211_i.h"
+ #include "wep.h"
+-#ifdef CONFIG_ATBM_USE_SW_ENC
++
+ #if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
+ int ieee80211_wep_init(struct ieee80211_local *local)
+ {
+@@ -219,10 +219,10 @@ int ieee80211_wep_encrypt(struct ieee80211_local *local,
+ 	atbm_skb_put(skb, WEP_ICV_LEN);
+ 
+ #if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
+-	return ieee80211_wep_encrypt_data((void*)local->wep_tx_tfm, rc4key, keylen + 3,
++	return ieee80211_wep_encrypt_data(local->wep_tx_tfm, rc4key, keylen + 3,
+ 					  iv + WEP_IV_LEN, len);
+ #else
+-	return ieee80211_wep_encrypt_data((void*)&local->wep_tx_ctx, rc4key, keylen + 3,
++	return ieee80211_wep_encrypt_data(&local->wep_tx_ctx, rc4key, keylen + 3,
+ 					  iv + WEP_IV_LEN, len);
+ #endif
+ }
+@@ -359,33 +359,3 @@ ieee80211_crypto_wep_decrypt(struct ieee80211_rx_data *rx)
+ 
+ 	return RX_CONTINUE;
+ }
+-#else
+-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 4, 0))
+-int ieee80211_wep_init(struct ieee80211_local *local){return 0;}
+-void ieee80211_wep_free(struct ieee80211_local *local){};
+-bool ieee80211_wep_is_weak_iv(struct sk_buff *skb, struct ieee80211_key *key){return true;}
+-int ieee80211_wep_encrypt_data(struct crypto_cipher *tfm, u8 *rc4key,
+-				size_t klen, u8 *data, size_t data_len){return 0;}
+-int ieee80211_wep_encrypt(struct ieee80211_local *local,
+-			  struct sk_buff *skb,
+-			  const u8 *key, int keylen, int keyidx){return 0;}
+-int ieee80211_wep_decrypt_data(struct crypto_cipher *tfm, u8 *rc4key,
+-			       size_t klen, u8 *data, size_t data_len){return 0;}
+-#else
+-void ieee80211_wep_init(struct ieee80211_local *local){}
+-bool ieee80211_wep_is_weak_iv(struct sk_buff *skb, struct ieee80211_key *key){return true;}
+-int ieee80211_wep_encrypt_data(struct arc4_ctx *ctx, u8 *rc4key,
+-				size_t klen, u8 *data, size_t data_len){return 0;}
+-int ieee80211_wep_encrypt(struct ieee80211_local *local,
+-			  struct sk_buff *skb,
+-			  const u8 *key, int keylen, int keyidx){return 0;}
+-int ieee80211_wep_decrypt_data(struct arc4_ctx *ctx, u8 *rc4key,
+-			       size_t klen, u8 *data, size_t data_len){return 0;}
+-#endif			   
+-//bool ieee80211_wep_is_weak_iv(struct sk_buff *skb, struct ieee80211_key *key);
+-
+-ieee80211_rx_result
+-ieee80211_crypto_wep_decrypt(struct ieee80211_rx_data *rx){return 0;};
+-
+-
+-#endif
+diff --git a/hal_apollo/mac80211/wep.h b/hal_apollo/mac80211/wep.h
+index 92fecf3..5a90be2 100644
+--- a/hal_apollo/mac80211/wep.h
++++ b/hal_apollo/mac80211/wep.h
+@@ -10,7 +10,7 @@
+ 
+ #ifndef WEP_H
+ #define WEP_H
+-#if 1//def CONFIG_ATBM_USE_SW_ENC
++#ifdef CONFIG_ATBM_USE_SW_ENC
+ #include <linux/skbuff.h>
+ #include <linux/types.h>
+ #include "ieee80211_i.h"
+diff --git a/hal_apollo/mac80211/wext_cfg.c b/hal_apollo/mac80211/wext_cfg.c
+index 331b72d..8fa723c 100644
+--- a/hal_apollo/mac80211/wext_cfg.c
++++ b/hal_apollo/mac80211/wext_cfg.c
+@@ -9273,9 +9273,9 @@ static int atbm_ioctl_2AntExtraIoSet(struct net_device *dev, struct iw_request_i
+ 	int ret = 0;
+ 	char *extra = NULL;
+ 	char *pRxData = NULL;
+-	u8 bWrite=0;
+-	u8 io22ToSet = 0;
+-	u8 io23ToSet = 0;
++	unsigned int bWrite=0;
++	unsigned int io22ToSet = 0;
++	unsigned int io23ToSet = 0;
+ 	char *fwCmdBuf = NULL;
+ 	struct wsm_2AntExtraIoSet TwoAntIo={255,255};
+ 

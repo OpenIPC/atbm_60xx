@@ -1,0 +1,19 @@
+driver update:
+	 【增加】BLE log获取连接属性
+	 【优化】5G ioctrl最佳信道扫描流程
+	 【增加】最佳信道获取
+	 【增加】VHT兼容tx rate指令
+	 【修复】PHY配置频偏扰乱问题
+	 【修复】usb退出流程可能存在的释放问题
+FW update:
+	 【优化】lmac加密存在越界问题
+	 【优化】提升临频干扰环境下的RF RX性能
+	 【优化】mac共存信道设置流程
+	 【修复】efuse私有数据读写问题
+	 【修复】LMAC bit偏移导致的白名单失效问题
+	 【优化】dsss寄存器配置，提升dsss性能
+	 【优化】BLE&WIFI RF切换机制，提升BLE共存状态下的RF切换效率
+	 【优化】速率控制算法，提升dsss &HE ER SU场景下的性能
+	 【优化】bandwith HT80控制算法，提升AP非法发包场景下的兼容表现
+	 【优化】beacon&probe在不同信道下的信号强度处理机制
+	 【优化】复杂环境下吞吐量性能。

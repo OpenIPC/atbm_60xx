@@ -1,0 +1,57 @@
+
+
+NIMBLE_INCLUDE_PATH := \
+	-I$(NIMBLE_ROOT)/cli \
+	-I$(NIMBLE_ROOT)/ext/tinycrypt/include \
+	-I$(NIMBLE_ROOT)/nimble/include \
+	-I$(NIMBLE_ROOT)/nimble/controller/include \
+	-I$(NIMBLE_ROOT)/nimble/host/include/  \
+	-I$(NIMBLE_ROOT)/nimble/host/mesh/include/ \
+	-I$(NIMBLE_ROOT)/nimble/host/services/include \
+	-I$(NIMBLE_ROOT)/nimble/host/src/include \
+	-I$(NIMBLE_ROOT)/nimble/host/src/include \
+	-I$(NIMBLE_ROOT)/nimble/host/store/config/include \
+	-I$(NIMBLE_ROOT)/nimble/host/util/include  \
+	-I$(NIMBLE_ROOT)/nimble/transport/uart/include \
+	-I$(NIMBLE_ROOT)/porting/nimble/include \
+	-I$(NIMBLE_ROOT)/nimble/include/ \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/ans/include \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/bas/include  \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/gap/include  \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/gatt/include \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/ias/include \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/lls/include \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/tps/include \
+  	-I$(NIMBLE_ROOT)/nimble/host/services/dis/include \
+  	-I$(NIMBLE_ROOT)/nimble/transport/ram/include \
+	-I$(NIMBLE_ROOT)/nimble/host/src	\
+	-I$(NIMBLE_ROOT)/nimble/drivers/juno/src \
+	-I$(NIMBLE_ROOT)/nimble/host/store/ram/include \
+	-I$(NIMBLE_ROOT)/nimble/host/mesh/src \
+	-I$(NIMBLE_ROOT)/nimble/host/mesh/include
+  
+
+NIMBLE_TRAN_SRC := \
+	$(ADV_CFG_ROOT)/ble_adv_cfg.o \
+	$(ADV_CFG_ROOT)/ble_gap.o \
+	$(ADV_CFG_ROOT)/ble_hs.o \
+	$(ADV_CFG_ROOT)/ble_hs_hci.o \
+	$(ADV_CFG_ROOT)/ble_hs_hci_cmd.o \
+	$(ADV_CFG_ROOT)/ble_hs_hci_evt.o \
+	$(ADV_CFG_ROOT)/ble_hs_hci_util.o \
+	$(ADV_CFG_ROOT)/os_mempool.o \
+	$(ADV_CFG_ROOT)/main.o \
+	$(ADV_CFG_ROOT)/ble_hs_cfg.o \
+	$(ADV_CFG_ROOT)/ble_hs_mqueue.o \
+	$(ADV_CFG_ROOT)/ble_hs_startup.o \
+	$(ADV_CFG_ROOT)/ble.o
+
+NIMBLE_TRAN_SRC += $(NIMBLE_ROOT)/nimble/transport/ioctl/ble_hci_hif.o 
+
+	
+
+LIB_NIMBLE_SRC	:= ${NIMBLE_TRAN_SRC} 
+					
+		
+
+					
